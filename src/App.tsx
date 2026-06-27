@@ -41,7 +41,9 @@ type View =
   | 'adminDashboard'
   | 'adminClients'
   | 'adminDrivers'
-  | 'adminDeliveries';
+  | 'adminDeliveries'
+  | 'privacy'
+  | 'terms';
 
 type Driver = {
   id: string;
@@ -259,6 +261,16 @@ function App() {
     setView('login');
   };
 
+  const deleteMyAccount = async () => {
+    await apiRequest<void>('/api/me', { method: 'DELETE' });
+    localStorage.removeItem(TOKEN_KEY);
+    setSession(null);
+    setDrivers([]);
+    setDeliveries([]);
+    setView('login');
+    toast('success', 'Conta e dados pessoais removidos.');
+  };
+
   const openDelivery = (id: string, target: View = 'deliveryDetails') => {
     setSelectedDeliveryId(id);
     setView(target);
@@ -267,7 +279,9 @@ function App() {
   return (
     <div className="min-h-screen bg-marra-paper text-marra-text">
       <ToastStack toasts={toasts} />
-      {view === 'login' && <LoginScreen onLogin={loginDriver} onRegister={() => setView('register')} onAdmin={() => setView('adminLogin')} />}
+      {view === 'privacy' && <LegalScreen type="privacy" onBack={() => setView('login')} />}
+      {view === 'terms' && <LegalScreen type="terms" onBack={() => setView('login')} />}
+      {view === 'login' && <LoginScreen onLogin={loginDriver} onRegister={() => setView('register')} onAdmin={() => setView('adminLogin')} onPrivacy={() => setView('privacy')} onTerms={() => setView('terms')} />}
       {view === 'register' && (
         <RegisterScreen
           onBack={() => setView('login')}
@@ -333,7 +347,7 @@ function App() {
             <DeliveryDetails delivery={selectedDelivery} clients={clients} drivers={drivers} onReceipt={() => setView('receipt')} />
           )}
           {view === 'receipt' && selectedDelivery && <Receipt delivery={selectedDelivery} clients={clients} drivers={drivers} />}
-          {view === 'account' && <AccountScreen driver={currentDriver} />}
+          {view === 'account' && <AccountScreen driver={currentDriver} onDeleteAccount={deleteMyAccount} toast={toast} />}
         </DriverShell>
       )}
 
@@ -429,10 +443,14 @@ function LoginScreen({
   onLogin,
   onRegister,
   onAdmin,
+  onPrivacy,
+  onTerms,
 }: {
   onLogin: (email: string, password: string) => Promise<void>;
   onRegister: () => void;
   onAdmin: () => void;
+  onPrivacy: () => void;
+  onTerms: () => void;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -468,6 +486,11 @@ function LoginScreen({
         <button type="button" onClick={onAdmin} className="mt-5 text-sm font-bold text-slate-500 hover:text-marra-primary">
           Acessar painel administrativo
         </button>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs font-bold text-slate-500">
+          <button type="button" onClick={onPrivacy} className="hover:text-marra-primary">Politica de Privacidade</button>
+          <span>|</span>
+          <button type="button" onClick={onTerms} className="hover:text-marra-primary">Termos de Uso</button>
+        </div>
       </form>
     </LoginFrame>
   );
@@ -508,6 +531,7 @@ function AdminLoginScreen({ onLogin, onBack }: { onLogin: (email: string, passwo
 function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (driver: Driver) => Promise<void> }) {
   const [driver, setDriver] = useState<Driver>(blankDriver);
   const [cnhFileName, setCnhFileName] = useState('');
+  const [accepted, setAccepted] = useState(false);
   const update = (key: keyof Driver, value: string) => setDriver((item) => ({ ...item, [key]: value }));
 
   return (
@@ -515,6 +539,7 @@ function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (drive
       <form
         onSubmit={async (event) => {
           event.preventDefault();
+          if (!accepted) return;
           await onSave({ ...driver, cnhFileName });
         }}
         className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-7 shadow-soft"
@@ -544,6 +569,12 @@ function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (drive
             onChange={(event) => setCnhFileName(event.target.files?.[0]?.name ?? '')}
           />
           <Camera size={18} />
+        </label>
+        <label className="mt-4 flex items-start gap-3 rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-600">
+          <input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1 h-4 w-4" required />
+          <span>
+            Li e aceito o uso dos meus dados para cadastro, comprovacao de entregas, seguranca operacional e cumprimento de obrigacoes legais.
+          </span>
         </label>
         <button className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-marra-primary px-5 py-3 font-bold text-white">
           <Save size={18} /> Salvar cadastro
@@ -1209,7 +1240,7 @@ function AdminDeliveries({
   );
 }
 
-function AccountScreen({ driver }: { driver: Driver }) {
+function AccountScreen({ driver, onDeleteAccount, toast }: { driver: Driver; onDeleteAccount: () => Promise<void>; toast: (type: Toast['type'], message: string) => void }) {
   return (
     <div className="space-y-5">
       <SectionHeader title="Minha Conta" subtitle="Dados do motorista cadastrados no sistema." />
@@ -1226,7 +1257,61 @@ function AccountScreen({ driver }: { driver: Driver }) {
           ]}
         />
       </Panel>
+      <Panel title="Privacidade e dados">
+        <p className="text-sm leading-6 text-slate-600">
+          Voce pode solicitar a exclusao da sua conta pelo proprio app. A acao remove seu cadastro, entregas vinculadas e arquivos enviados.
+        </p>
+        <button
+          onClick={async () => {
+            if (!window.confirm('Deseja excluir sua conta e dados vinculados? Esta acao nao pode ser desfeita.')) return;
+            try {
+              await onDeleteAccount();
+            } catch (error) {
+              toast('error', error instanceof Error ? error.message : 'Nao foi possivel excluir a conta.');
+            }
+          }}
+          className="mt-4 rounded-lg bg-red-50 px-5 py-3 font-black text-red-700"
+        >
+          Excluir minha conta
+        </button>
+      </Panel>
     </div>
+  );
+}
+
+function LegalScreen({ type, onBack }: { type: 'privacy' | 'terms'; onBack: () => void }) {
+  const isPrivacy = type === 'privacy';
+  return (
+    <main className="min-h-screen bg-marra-paper p-4 sm:p-8">
+      <section className="mx-auto max-w-4xl rounded-lg border border-slate-200 bg-white p-6 shadow-soft sm:p-8">
+        <div className="mb-6 rounded-lg bg-marra-primary p-5">
+          <BrandMark />
+        </div>
+        <h1 className="text-2xl font-black text-slate-900">{isPrivacy ? 'Politica de Privacidade' : 'Termos de Uso'}</h1>
+        <p className="mt-2 text-sm text-slate-500">Marra Transportes - aplicativo de comprovacao de entregas.</p>
+
+        {isPrivacy ? (
+          <div className="mt-6 space-y-4 text-sm leading-7 text-slate-700">
+            <p>Coletamos dados de cadastro do motorista, dados de clientes atendidos, fotos da entrega e da nota fiscal, assinatura, placa, observacoes, data, hora e localizacao GPS para comprovar a execucao do servico.</p>
+            <p>Camera, fotos e localizacao sao usados somente durante o registro da entrega. A localizacao e capturada mediante permissao do dispositivo.</p>
+            <p>Os dados sao armazenados no servidor da empresa e acessados por motoristas autorizados e administradores. Nao vendemos dados pessoais.</p>
+            <p>O motorista pode solicitar a exclusao da conta em Minha Conta. A exclusao remove cadastro, entregas vinculadas e arquivos enviados, salvo quando houver obrigacao legal de retencao aplicavel.</p>
+            <p>Contato do controlador: configure um e-mail corporativo oficial antes de publicar nas lojas.</p>
+          </div>
+        ) : (
+          <div className="mt-6 space-y-4 text-sm leading-7 text-slate-700">
+            <p>O aplicativo deve ser usado por motoristas e administradores autorizados pela Marra Transportes para registrar entregas reais.</p>
+            <p>O usuario e responsavel por enviar informacoes verdadeiras, imagens relacionadas ao servico executado e assinatura obtida no ato da entrega.</p>
+            <p>E proibido usar o aplicativo para registrar entregas inexistentes, dados de terceiros sem autorizacao ou conteudo inadequado.</p>
+            <p>A empresa pode bloquear contas em caso de uso indevido, risco operacional ou encerramento do vinculo com o motorista.</p>
+          </div>
+        )}
+
+        <button onClick={onBack} className="mt-8 rounded-lg bg-marra-primary px-5 py-3 font-black text-white">
+          Voltar
+        </button>
+      </section>
+    </main>
   );
 }
 

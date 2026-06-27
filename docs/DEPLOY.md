@@ -142,6 +142,12 @@ Com Certbot:
 certbot --nginx -d appmarratransportes.seudominio.com.br
 ```
 
+Para publicacao em Apple App Store e Google Play, use sempre HTTPS no dominio consumido pelo app.
+
+## Apps mobile
+
+Checklist de loja: [docs/APP_STORES.md](APP_STORES.md).
+
 ## Comandos uteis
 
 ```bash

@@ -64,6 +64,12 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+async function removeUpload(url) {
+  if (!url || typeof url !== 'string' || !url.startsWith('/uploads/')) return;
+  const fileName = path.basename(url);
+  await fs.unlink(path.join(uploadsDir, fileName)).catch(() => {});
+}
+
 function mapDriver(row) {
   return {
     id: row.id,
@@ -321,6 +327,27 @@ app.put('/api/clients/:id', authenticate, requireAdmin, async (req, res) => {
 
 app.delete('/api/clients/:id', authenticate, requireAdmin, async (req, res) => {
   await pool.query('DELETE FROM clients WHERE id = $1', [req.params.id]);
+  res.status(204).end();
+});
+
+app.delete('/api/me', authenticate, async (req, res) => {
+  if (req.user.role !== 'driver') {
+    return res.status(403).json({ message: 'Contas administrativas devem ser removidas pelo responsavel tecnico.' });
+  }
+
+  const deliveries = await pool.query(
+    'SELECT nf_photo_url, delivery_photo_url, signature_url FROM deliveries WHERE driver_id = $1',
+    [req.user.driverId],
+  );
+  await pool.query('DELETE FROM deliveries WHERE driver_id = $1', [req.user.driverId]);
+  await pool.query('DELETE FROM drivers WHERE id = $1', [req.user.driverId]);
+
+  for (const delivery of deliveries.rows) {
+    await removeUpload(delivery.nf_photo_url);
+    await removeUpload(delivery.delivery_photo_url);
+    await removeUpload(delivery.signature_url);
+  }
+
   res.status(204).end();
 });
 
