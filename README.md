@@ -17,6 +17,35 @@ npm install
 npm run dev
 ```
 
+Acesse:
+
+```text
+http://127.0.0.1:5173
+```
+
+## Build de producao
+
+```bash
+npm ci
+npm run build
+npm start
+```
+
+Em producao com PM2:
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+A aplicacao fica na porta:
+
+```text
+5173
+```
+
+Guia completo de servidor: [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Acessos de demonstracao
 
 Motorista:
