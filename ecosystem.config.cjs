@@ -2,8 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'appmarratransportes',
-      script: 'npm',
-      args: 'start',
+      script: 'server/index.js',
       cwd: __dirname,
       exec_mode: 'fork',
       instances: 1,

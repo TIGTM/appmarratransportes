@@ -1,7 +1,9 @@
 node_modules/
 dist/
+uploads/
 .env
 .env.*
+!.env.example
 *.local
 *.tsbuildinfo
 vite.config.js

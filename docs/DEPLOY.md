@@ -1,6 +1,13 @@
 # Deploy em producao
 
-Este projeto e um frontend estatico React/Vite. Em producao ele deve ser compilado com `npm run build` e servido pelo pacote `serve` gerenciado pelo PM2.
+Este projeto agora e uma aplicacao real full-stack:
+
+- Frontend React/Vite compilado em `dist`.
+- Backend Node/Express na mesma porta.
+- PostgreSQL para persistencia.
+- JWT para sessao.
+- Senhas com bcrypt.
+- Uploads gravados em `uploads/`.
 
 ## Requisitos do servidor
 
@@ -8,9 +15,33 @@ Este projeto e um frontend estatico React/Vite. Em producao ele deve ser compila
 - npm
 - Git
 - PM2 ja instalado
+- PostgreSQL
 - Porta interna escolhida: `5173`
 
-## Primeira instalacao
+## Criar banco PostgreSQL
+
+Exemplo como `root` ou usuario com permissao:
+
+```bash
+sudo -u postgres psql
+```
+
+Dentro do `psql`:
+
+```sql
+CREATE DATABASE marra_transportes;
+CREATE USER marra_user WITH ENCRYPTED PASSWORD 'SENHA_FORTE_AQUI';
+GRANT ALL PRIVILEGES ON DATABASE marra_transportes TO marra_user;
+\q
+```
+
+Em alguns servidores PostgreSQL 15+, tambem rode:
+
+```bash
+sudo -u postgres psql -d marra_transportes -c "GRANT ALL ON SCHEMA public TO marra_user;"
+```
+
+## Primeira instalacao do app
 
 No servidor, dentro da pasta onde ficam os sites, por exemplo `/www`:
 
@@ -19,9 +50,23 @@ cd /www
 git clone https://github.com/TIGTM/appmarratransportes.git
 cd appmarratransportes
 npm ci
+cp .env.example .env
+nano .env
 npm run build
 pm2 start ecosystem.config.cjs
 pm2 save
+```
+
+Configure o `.env` antes do `pm2 start`:
+
+```env
+NODE_ENV=production
+PORT=5173
+DATABASE_URL=postgres://marra_user:SENHA_FORTE_AQUI@127.0.0.1:5432/marra_transportes
+JWT_SECRET=coloque-um-segredo-grande-e-unico
+ADMIN_EMAIL=admin@seudominio.com.br
+ADMIN_PASSWORD=uma-senha-forte
+MARRA_SEED_DEMO=false
 ```
 
 Verifique:
@@ -30,6 +75,7 @@ Verifique:
 pm2 status
 pm2 logs appmarratransportes
 ss -tulpn | grep 5173
+curl http://127.0.0.1:5173/api/health
 ```
 
 Se aparecer `*:5173` ou `0.0.0.0:5173`, a aplicacao esta no ar pelo Node.
@@ -104,4 +150,18 @@ pm2 logs appmarratransportes
 pm2 restart appmarratransportes
 pm2 stop appmarratransportes
 pm2 delete appmarratransportes
+```
+
+## Backup
+
+Banco:
+
+```bash
+pg_dump marra_transportes > backup-marra-$(date +%F).sql
+```
+
+Uploads:
+
+```bash
+tar -czf uploads-marra-$(date +%F).tar.gz uploads/
 ```

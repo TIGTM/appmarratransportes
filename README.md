@@ -1,6 +1,6 @@
 # Marra Transportes
 
-Prototipo navegavel de alta fidelidade para demonstracao do sistema de comprovacao de entregas da Marra Transportes.
+Sistema de comprovacao de entregas da Marra Transportes.
 
 ## Tecnologias
 
@@ -8,7 +8,10 @@ Prototipo navegavel de alta fidelidade para demonstracao do sistema de comprovac
 - Vite
 - TypeScript
 - TailwindCSS
-- LocalStorage
+- Node/Express
+- PostgreSQL
+- JWT
+- Uploads em disco
 
 ## Rodar localmente
 
@@ -23,7 +26,7 @@ Acesse:
 http://127.0.0.1:5173
 ```
 
-## Build de producao
+## Build de producao real
 
 ```bash
 npm ci
@@ -38,7 +41,9 @@ pm2 start ecosystem.config.cjs
 pm2 save
 ```
 
-A aplicacao fica na porta:
+Antes de iniciar em producao, configure o `.env` com `DATABASE_URL`, `JWT_SECRET`, `ADMIN_EMAIL` e `ADMIN_PASSWORD`.
+
+A aplicacao real sobe API + frontend na porta:
 
 ```text
 5173
@@ -46,22 +51,16 @@ A aplicacao fica na porta:
 
 Guia completo de servidor: [docs/DEPLOY.md](docs/DEPLOY.md).
 
-## Acessos de demonstracao
+## Acessos
 
 Motorista:
 
-```text
-joao@demo.com
-123456
-```
+O motorista deve se cadastrar na tela inicial e aguardar aprovacao no painel administrativo.
 
 Administrador:
 
-```text
-admin@marra.com
-admin123
-```
+Defina `ADMIN_EMAIL` e `ADMIN_PASSWORD` no `.env` do servidor.
 
 ## Observacao
 
-Este projeto e apenas um prototipo frontend. Nao possui backend, banco de dados, API, autenticacao real ou envio real de e-mails.
+Este projeto agora possui backend Node/Express, PostgreSQL, autenticacao JWT, senhas com bcrypt e uploads de comprovantes em disco.

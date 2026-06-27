@@ -85,24 +85,9 @@ type Delivery = {
 
 type Toast = { id: string; type: 'success' | 'error'; message: string };
 
-const KEYS = {
-  drivers: 'marra:drivers',
-  clients: 'marra:clients',
-  deliveries: 'marra:deliveries',
-  session: 'marra:session',
-};
+const TOKEN_KEY = 'marra:token';
 
-const today = '2026-06-18';
-const samplePhoto =
-  'data:image/svg+xml;utf8,' +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620"><rect width="900" height="620" fill="#F4F6F8"/><rect x="72" y="72" width="756" height="476" rx="18" fill="#fff" stroke="#005A9C" stroke-width="8"/><text x="450" y="286" text-anchor="middle" font-family="Arial" font-size="46" fill="#005A9C" font-weight="700">MARRA TRANSPORTES</text><text x="450" y="350" text-anchor="middle" font-family="Arial" font-size="28" fill="#333">Registro fotografico da entrega</text></svg>`,
-  );
-const sampleSignature =
-  'data:image/svg+xml;utf8,' +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="620" height="190"><rect width="620" height="190" fill="white"/><path d="M50 126 C135 32, 155 170, 236 87 S355 98, 410 69 S507 42, 570 112" fill="none" stroke="#005A9C" stroke-width="7" stroke-linecap="round"/><line x1="45" y1="154" x2="575" y2="154" stroke="#cbd5e1" stroke-width="2"/></svg>`,
-  );
+const today = new Date().toISOString().slice(0, 10);
 
 const blankDriver: Driver = {
   id: '',
@@ -126,112 +111,19 @@ const blankClient: Client = {
 
 const newId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
 
-function readStore<T>(key: string, fallback: T): T {
-  const raw = localStorage.getItem(key);
-  return raw ? (JSON.parse(raw) as T) : fallback;
-}
+async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const headers = new Headers(options.headers);
+  if (!headers.has('Content-Type') && options.body) headers.set('Content-Type', 'application/json');
+  if (token) headers.set('Authorization', `Bearer ${token}`);
 
-function writeStore<T>(key: string, value: T) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-function seedData() {
-  if (localStorage.getItem(KEYS.clients)) return;
-
-  const drivers: Driver[] = [
-    {
-      id: 'driver-joao',
-      name: 'Joao Henrique Silva',
-      cpf: '123.456.789-10',
-      phone: '(31) 98888-1010',
-      email: 'joao@demo.com',
-      password: '123456',
-      plate: 'MTB-4A21',
-      cnhFileName: 'cnh-joao.pdf',
-      status: 'Aprovado',
-    },
-    {
-      id: 'driver-carlos',
-      name: 'Carlos Eduardo Rocha',
-      cpf: '987.654.321-00',
-      phone: '(31) 97777-2020',
-      email: 'carlos@demo.com',
-      password: '123456',
-      plate: 'RTA-8C45',
-      cnhFileName: 'cnh-carlos.pdf',
-      status: 'Pendente',
-    },
-  ];
-
-  const clients: Client[] = [
-    {
-      id: 'client-expominas',
-      companyName: 'Expominas Eventos',
-      email: 'logistica@expominas.com.br',
-      extraEmails: 'financeiro@expominas.com.br; operacional@expominas.com.br',
-      phone: '(31) 3333-1200',
-      address: 'Av. Amazonas, 6200 - Gameleira, Belo Horizonte - MG',
-    },
-    {
-      id: 'client-minascentro',
-      companyName: 'Minascentro',
-      email: 'recebimento@minascentro.com.br',
-      extraEmails: 'eventos@minascentro.com.br',
-      phone: '(31) 3217-7900',
-      address: 'Av. Augusto de Lima, 785 - Centro, Belo Horizonte - MG',
-    },
-    {
-      id: 'client-alphaville',
-      companyName: 'Alphaville Centro Empresarial',
-      email: 'facilities@alphaville.com.br',
-      extraEmails: '',
-      phone: '(31) 3516-4400',
-      address: 'Alameda da Serra, 400 - Nova Lima - MG',
-    },
-  ];
-
-  const deliveries: Delivery[] = [
-    {
-      id: 'delivery-1',
-      protocol: 'MT-20260618-000001',
-      driverId: 'driver-joao',
-      clientId: 'client-expominas',
-      documentType: 'NF',
-      address: clients[0].address,
-      plate: 'MTB-4A21',
-      notes: 'Carga entregue na doca 2. Responsavel local confirmou o recebimento.',
-      nfPhoto: samplePhoto,
-      deliveryPhoto: samplePhoto,
-      signature: sampleSignature,
-      latitude: -19.92523,
-      longitude: -43.99138,
-      date: '2026-06-18',
-      time: '09:42',
-      status: 'Concluida',
-    },
-    {
-      id: 'delivery-2',
-      protocol: 'MT-20260617-000002',
-      driverId: 'driver-joao',
-      clientId: 'client-minascentro',
-      documentType: 'CTE',
-      address: clients[1].address,
-      plate: 'MTB-4A21',
-      notes: 'Entrega realizada com acesso pela portaria principal.',
-      nfPhoto: samplePhoto,
-      deliveryPhoto: samplePhoto,
-      signature: sampleSignature,
-      latitude: -19.92381,
-      longitude: -43.94518,
-      date: '2026-06-17',
-      time: '15:18',
-      status: 'Concluida',
-    },
-  ];
-
-  writeStore(KEYS.drivers, drivers);
-  writeStore(KEYS.clients, clients);
-  writeStore(KEYS.deliveries, deliveries);
+  const response = await fetch(path, { ...options, headers });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.message || 'Erro de comunicacao com o servidor.');
+  }
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
 }
 
 function formatDate(date: string) {
@@ -252,18 +144,19 @@ function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   useEffect(() => {
-    seedData();
-    setDrivers(readStore<Driver[]>(KEYS.drivers, []));
-    setClients(readStore<Client[]>(KEYS.clients, []));
-    setDeliveries(readStore<Delivery[]>(KEYS.deliveries, []));
-    const saved = readStore<{ role: 'driver' | 'admin'; driverId?: string } | null>(KEYS.session, null);
-    if (saved?.role === 'admin') {
-      setSession(saved);
-      setView('adminDashboard');
-    } else if (saved?.driverId) {
-      setSession(saved);
-      setView('driverDashboard');
-    }
+    const restoreSession = async () => {
+      if (!localStorage.getItem(TOKEN_KEY)) return;
+      try {
+        const me = await apiRequest<{ session: { role: 'driver' | 'admin'; driverId?: string }; driver?: Driver }>('/api/me');
+        setSession(me.session);
+        await loadData();
+        setView(me.session.role === 'admin' ? 'adminDashboard' : 'driverDashboard');
+      } catch {
+        localStorage.removeItem(TOKEN_KEY);
+        setSession(null);
+      }
+    };
+    restoreSession();
   }, []);
 
   const currentDriver = drivers.find((driver) => driver.id === session?.driverId);
@@ -275,48 +168,93 @@ function App() {
     window.setTimeout(() => setToasts((items) => items.filter((toastItem) => toastItem.id !== item.id)), 3200);
   };
 
-  const saveDrivers = (items: Driver[]) => {
-    setDrivers(items);
-    writeStore(KEYS.drivers, items);
+  const loadData = async () => {
+    const data = await apiRequest<{ drivers: Driver[]; clients: Client[]; deliveries: Delivery[] }>('/api/bootstrap');
+    setDrivers(data.drivers);
+    setClients(data.clients);
+    setDeliveries(data.deliveries);
   };
 
-  const saveClients = (items: Client[]) => {
-    setClients(items);
-    writeStore(KEYS.clients, items);
+  const saveDrivers = async (items: Driver[]) => {
+    const changed = items.find((item) => drivers.find((driver) => driver.id === item.id && driver.status !== item.status));
+    if (changed) {
+      await apiRequest<{ driver: Driver }>(`/api/drivers/${changed.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: changed.status }),
+      });
+    }
+    setDrivers(items);
+  };
+
+  const saveClients = async (items: Client[]) => {
+    const created = items.find((item) => !clients.some((client) => client.id === item.id));
+    const removed = clients.find((client) => !items.some((item) => item.id === client.id));
+    const changed = items.find((item) => {
+      const old = clients.find((client) => client.id === item.id);
+      return old && JSON.stringify(old) !== JSON.stringify(item);
+    });
+
+    if (created) {
+      const result = await apiRequest<{ client: Client }>('/api/clients', {
+        method: 'POST',
+        body: JSON.stringify(created),
+      });
+      setClients([result.client, ...clients]);
+      return;
+    }
+    if (changed) {
+      const result = await apiRequest<{ client: Client }>(`/api/clients/${changed.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(changed),
+      });
+      setClients(clients.map((client) => (client.id === result.client.id ? result.client : client)));
+      return;
+    }
+    if (removed) {
+      await apiRequest<void>(`/api/clients/${removed.id}`, { method: 'DELETE' });
+      setClients(items);
+      return;
+    }
   };
 
   const saveDeliveries = (items: Delivery[]) => {
     setDeliveries(items);
-    writeStore(KEYS.deliveries, items);
   };
 
-  const loginDriver = (email: string, password: string) => {
-    const driver = drivers.find((item) => item.email === email && item.password === password);
-    if (!driver) {
-      toast('error', 'E-mail ou senha invalidos.');
-      return;
+  const loginDriver = async (email: string, password: string) => {
+    try {
+      const result = await apiRequest<{ token: string; session: { role: 'driver'; driverId: string }; driver: Driver }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password, role: 'driver' }),
+      });
+      localStorage.setItem(TOKEN_KEY, result.token);
+      setSession(result.session);
+      await loadData();
+      setView('driverDashboard');
+      toast('success', `Bem-vindo, ${result.driver.name.split(' ')[0]}.`);
+    } catch (error) {
+      toast('error', error instanceof Error ? error.message : 'E-mail ou senha invalidos.');
     }
-    const nextSession = { role: 'driver' as const, driverId: driver.id };
-    setSession(nextSession);
-    writeStore(KEYS.session, nextSession);
-    setView('driverDashboard');
-    toast('success', `Bem-vindo, ${driver.name.split(' ')[0]}.`);
   };
 
-  const loginAdmin = (email: string, password: string) => {
-    if (email !== 'admin@marra.com' || password !== 'admin123') {
-      toast('error', 'Credenciais administrativas invalidas.');
-      return;
+  const loginAdmin = async (email: string, password: string) => {
+    try {
+      const result = await apiRequest<{ token: string; session: { role: 'admin' } }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password, role: 'admin' }),
+      });
+      localStorage.setItem(TOKEN_KEY, result.token);
+      setSession(result.session);
+      await loadData();
+      setView('adminDashboard');
+      toast('success', 'Painel administrativo liberado.');
+    } catch (error) {
+      toast('error', error instanceof Error ? error.message : 'Credenciais administrativas invalidas.');
     }
-    const nextSession = { role: 'admin' as const };
-    setSession(nextSession);
-    writeStore(KEYS.session, nextSession);
-    setView('adminDashboard');
-    toast('success', 'Painel administrativo liberado.');
   };
 
   const logout = () => {
-    localStorage.removeItem(KEYS.session);
+    localStorage.removeItem(TOKEN_KEY);
     setSession(null);
     setView('login');
   };
@@ -333,11 +271,17 @@ function App() {
       {view === 'register' && (
         <RegisterScreen
           onBack={() => setView('login')}
-          onSave={(driver) => {
-            const created = { ...driver, id: newId('driver'), status: 'Pendente' as DriverStatus };
-            saveDrivers([...drivers, created]);
-            toast('success', 'Cadastro enviado para analise.');
-            setView('login');
+          onSave={async (driver) => {
+            try {
+              await apiRequest<{ driver: Driver }>('/api/drivers/register', {
+                method: 'POST',
+                body: JSON.stringify(driver),
+              });
+              toast('success', 'Cadastro enviado para analise.');
+              setView('login');
+            } catch (error) {
+              toast('error', error instanceof Error ? error.message : 'Nao foi possivel cadastrar.');
+            }
           }}
         />
       )}
@@ -360,11 +304,19 @@ function App() {
               clients={clients}
               deliveryCount={deliveries.length}
               onCancel={() => setView('driverDashboard')}
-              onSave={(delivery) => {
-                saveDeliveries([delivery, ...deliveries]);
-                setSelectedDeliveryId(delivery.id);
-                toast('success', `Entrega ${delivery.protocol} registrada.`);
-                setView('receipt');
+              onSave={async (delivery) => {
+                try {
+                  const result = await apiRequest<{ delivery: Delivery }>('/api/deliveries', {
+                    method: 'POST',
+                    body: JSON.stringify(delivery),
+                  });
+                  saveDeliveries([result.delivery, ...deliveries]);
+                  setSelectedDeliveryId(result.delivery.id);
+                  toast('success', `Entrega ${result.delivery.protocol} registrada.`);
+                  setView('receipt');
+                } catch (error) {
+                  toast('error', error instanceof Error ? error.message : 'Nao foi possivel registrar a entrega.');
+                }
               }}
               toast={toast}
             />
@@ -451,11 +403,11 @@ function LoginFrame({ children }: { children: React.ReactNode }) {
           <BrandMark />
           <div className="max-w-xl">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm font-semibold">
-              <ShieldCheck size={17} /> Prototipo operacional
+              <ShieldCheck size={17} /> Operacao digital
             </div>
             <h1 className="text-5xl font-black leading-tight tracking-normal">Comprovacao de entregas em tempo real.</h1>
             <p className="mt-5 text-lg leading-8 text-sky-50">
-              Registro de motorista, cliente, fotos, assinatura, horario e localizacao em uma jornada simples para demonstracao comercial.
+              Registro de motorista, cliente, fotos, assinatura, horario e localizacao em uma jornada simples para comprovacao operacional.
             </p>
           </div>
           <div className="grid grid-cols-3 gap-4">
@@ -478,19 +430,19 @@ function LoginScreen({
   onRegister,
   onAdmin,
 }: {
-  onLogin: (email: string, password: string) => void;
+  onLogin: (email: string, password: string) => Promise<void>;
   onRegister: () => void;
   onAdmin: () => void;
 }) {
-  const [email, setEmail] = useState('joao@demo.com');
-  const [password, setPassword] = useState('123456');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     setLoading(true);
-    window.setTimeout(() => {
-      onLogin(email, password);
+    window.setTimeout(async () => {
+      await onLogin(email, password);
       setLoading(false);
     }, 550);
   };
@@ -502,7 +454,7 @@ function LoginScreen({
           <BrandMark />
         </div>
         <h2 className="text-2xl font-black text-slate-900">Acesso do motorista</h2>
-        <p className="mt-2 text-sm text-slate-500">Demo: joao@demo.com / 123456</p>
+        <p className="mt-2 text-sm text-slate-500">Use seu e-mail e senha cadastrados.</p>
         <div className="mt-6 space-y-4">
           <Field label="E-mail" value={email} onChange={setEmail} type="email" placeholder="motorista@email.com" />
           <Field label="Senha" value={password} onChange={setPassword} type="password" placeholder="******" />
@@ -521,15 +473,15 @@ function LoginScreen({
   );
 }
 
-function AdminLoginScreen({ onLogin, onBack }: { onLogin: (email: string, password: string) => void; onBack: () => void }) {
-  const [email, setEmail] = useState('admin@marra.com');
-  const [password, setPassword] = useState('admin123');
+function AdminLoginScreen({ onLogin, onBack }: { onLogin: (email: string, password: string) => Promise<void>; onBack: () => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   return (
     <LoginFrame>
       <form
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
-          onLogin(email, password);
+          await onLogin(email, password);
         }}
         className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-7 shadow-soft"
       >
@@ -537,7 +489,7 @@ function AdminLoginScreen({ onLogin, onBack }: { onLogin: (email: string, passwo
           <BrandMark />
         </div>
         <h2 className="text-2xl font-black text-slate-900">Painel administrativo</h2>
-        <p className="mt-2 text-sm text-slate-500">Demo: admin@marra.com / admin123</p>
+        <p className="mt-2 text-sm text-slate-500">Use as credenciais administrativas configuradas no servidor.</p>
         <div className="mt-6 space-y-4">
           <Field label="E-mail" value={email} onChange={setEmail} type="email" />
           <Field label="Senha" value={password} onChange={setPassword} type="password" />
@@ -553,7 +505,7 @@ function AdminLoginScreen({ onLogin, onBack }: { onLogin: (email: string, passwo
   );
 }
 
-function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (driver: Driver) => void }) {
+function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (driver: Driver) => Promise<void> }) {
   const [driver, setDriver] = useState<Driver>(blankDriver);
   const [cnhFileName, setCnhFileName] = useState('');
   const update = (key: keyof Driver, value: string) => setDriver((item) => ({ ...item, [key]: value }));
@@ -561,9 +513,9 @@ function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (drive
   return (
     <LoginFrame>
       <form
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
-          onSave({ ...driver, cnhFileName });
+          await onSave({ ...driver, cnhFileName });
         }}
         className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-7 shadow-soft"
       >
@@ -731,7 +683,7 @@ function TopBar({ title, onMenu }: { title: string; onMenu: () => void }) {
           <h1 className="text-lg font-black text-slate-900">{title}</h1>
         </div>
         <div className="hidden items-center gap-2 rounded-full bg-sky-50 px-4 py-2 text-sm font-bold text-marra-primary sm:flex">
-          <CheckCircle2 size={17} /> Demo LocalStorage
+          <CheckCircle2 size={17} /> Sistema online
         </div>
       </div>
     </header>
@@ -810,7 +762,7 @@ function NewDeliveryScreen({
   clients: Client[];
   deliveryCount: number;
   onCancel: () => void;
-  onSave: (delivery: Delivery) => void;
+  onSave: (delivery: Delivery) => Promise<void>;
   toast: (type: Toast['type'], message: string) => void;
 }) {
   const [clientId, setClientId] = useState(clients[0]?.id ?? '');
@@ -832,8 +784,7 @@ function NewDeliveryScreen({
   const captureGps = () => {
     setLoadingGps(true);
     if (!navigator.geolocation) {
-      setCoords({ latitude: -19.92523, longitude: -43.99138 });
-      toast('success', 'Localizacao simulada capturada.');
+      toast('error', 'GPS indisponivel neste dispositivo.');
       setLoadingGps(false);
       return;
     }
@@ -844,22 +795,29 @@ function NewDeliveryScreen({
         setLoadingGps(false);
       },
       () => {
-        setCoords({ latitude: -19.92523, longitude: -43.99138 });
-        toast('error', 'GPS indisponivel. Usando localizacao simulada.');
+        toast('error', 'Nao foi possivel capturar o GPS. Verifique a permissao de localizacao.');
         setLoadingGps(false);
       },
       { enableHighAccuracy: true, timeout: 6500 },
     );
   };
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!clientId) {
       toast('error', 'Selecione um cliente.');
       return;
     }
+    if (!nfPhoto || !deliveryPhoto || !signature) {
+      toast('error', 'Inclua foto da NF, foto da entrega e assinatura.');
+      return;
+    }
+    if (coords.latitude === undefined || coords.longitude === undefined) {
+      toast('error', 'Capture a localizacao GPS antes de finalizar.');
+      return;
+    }
     const now = new Date();
-    onSave({
+    await onSave({
       id: newId('delivery'),
       protocol: protocolFor(deliveryCount + 1),
       driverId: driver.id,
@@ -900,7 +858,7 @@ function NewDeliveryScreen({
         <aside className="space-y-4">
           <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="font-black text-slate-900">GPS</h3>
-            <p className="mt-2 text-sm text-slate-500">Captura via navegador com fallback visual para a demonstracao.</p>
+            <p className="mt-2 text-sm text-slate-500">Captura real via navegador, mediante permissao do dispositivo.</p>
             <button type="button" onClick={captureGps} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-marra-primary px-4 py-3 font-bold text-white">
               <MapPin size={18} /> {loadingGps ? 'Capturando...' : 'Capturar Localizacao'}
             </button>
@@ -1071,7 +1029,7 @@ function Receipt({ delivery, clients, drivers }: { delivery: Delivery; clients: 
             <ImagePreview title="Assinatura" src={delivery.signature} />
           </div>
           <footer className="mt-8 border-t border-slate-200 pt-5 text-center text-xs font-semibold text-slate-500">
-            Marra Transportes - documento gerado automaticamente para demonstracao do prototipo.
+            Marra Transportes - documento gerado automaticamente pelo sistema.
           </footer>
         </main>
       </div>
@@ -1082,7 +1040,7 @@ function Receipt({ delivery, clients, drivers }: { delivery: Delivery; clients: 
 function AdminDashboard({ drivers, clients, deliveries }: { drivers: Driver[]; clients: Client[]; deliveries: Delivery[] }) {
   return (
     <div className="space-y-6">
-      <SectionHeader title="Dashboard" subtitle="Indicadores operacionais simulados via LocalStorage." />
+      <SectionHeader title="Dashboard" subtitle="Indicadores operacionais do banco de dados." />
       <div className="grid gap-4 md:grid-cols-3">
         <Metric icon={<Truck />} label="Motoristas cadastrados" value={String(drivers.length)} />
         <Metric icon={<Users />} label="Clientes cadastrados" value={String(clients.length)} />
@@ -1110,20 +1068,24 @@ function AdminDashboard({ drivers, clients, deliveries }: { drivers: Driver[]; c
   );
 }
 
-function ClientsManager({ clients, saveClients, toast }: { clients: Client[]; saveClients: (clients: Client[]) => void; toast: (type: Toast['type'], message: string) => void }) {
+function ClientsManager({ clients, saveClients, toast }: { clients: Client[]; saveClients: (clients: Client[]) => Promise<void>; toast: (type: Toast['type'], message: string) => void }) {
   const [form, setForm] = useState<Client>(blankClient);
   const editing = Boolean(form.id);
   const update = (key: keyof Client, value: string) => setForm((item) => ({ ...item, [key]: value }));
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (editing) {
-      saveClients(clients.map((client) => (client.id === form.id ? form : client)));
-      toast('success', 'Cliente atualizado.');
-    } else {
-      saveClients([{ ...form, id: newId('client') }, ...clients]);
-      toast('success', 'Cliente cadastrado.');
+    try {
+      if (editing) {
+        await saveClients(clients.map((client) => (client.id === form.id ? form : client)));
+        toast('success', 'Cliente atualizado.');
+      } else {
+        await saveClients([{ ...form, id: newId('client') }, ...clients]);
+        toast('success', 'Cliente cadastrado.');
+      }
+      setForm(blankClient);
+    } catch (error) {
+      toast('error', error instanceof Error ? error.message : 'Nao foi possivel salvar o cliente.');
     }
-    setForm(blankClient);
   };
   return (
     <div className="grid gap-6 lg:grid-cols-[390px_1fr]">
@@ -1151,7 +1113,17 @@ function ClientsManager({ clients, saveClients, toast }: { clients: Client[]; sa
                 <button onClick={() => setForm(client)} className="rounded-lg border border-slate-200 p-3 text-marra-primary">
                   <Edit3 size={17} />
                 </button>
-                <button onClick={() => saveClients(clients.filter((item) => item.id !== client.id))} className="rounded-lg border border-red-200 p-3 text-red-600">
+                <button
+                  onClick={async () => {
+                    try {
+                      await saveClients(clients.filter((item) => item.id !== client.id));
+                      toast('success', 'Cliente removido.');
+                    } catch (error) {
+                      toast('error', error instanceof Error ? error.message : 'Nao foi possivel remover o cliente.');
+                    }
+                  }}
+                  className="rounded-lg border border-red-200 p-3 text-red-600"
+                >
                   <X size={17} />
                 </button>
               </div>
@@ -1163,11 +1135,11 @@ function ClientsManager({ clients, saveClients, toast }: { clients: Client[]; sa
   );
 }
 
-function DriversManager({ drivers, saveDrivers }: { drivers: Driver[]; saveDrivers: (drivers: Driver[]) => void }) {
-  const setStatus = (id: string, status: DriverStatus) => saveDrivers(drivers.map((driver) => (driver.id === id ? { ...driver, status } : driver)));
+function DriversManager({ drivers, saveDrivers }: { drivers: Driver[]; saveDrivers: (drivers: Driver[]) => Promise<void> }) {
+  const setStatus = async (id: string, status: DriverStatus) => saveDrivers(drivers.map((driver) => (driver.id === id ? { ...driver, status } : driver)));
   return (
     <div className="space-y-5">
-      <SectionHeader title="Gestao de Motoristas" subtitle="Aprovacao e bloqueio simulados para a demonstracao." />
+      <SectionHeader title="Gestao de Motoristas" subtitle="Aprovacao e bloqueio com persistencia real no banco de dados." />
       <div className="grid gap-4">
         {drivers.map((driver) => (
           <div key={driver.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -1240,7 +1212,7 @@ function AdminDeliveries({
 function AccountScreen({ driver }: { driver: Driver }) {
   return (
     <div className="space-y-5">
-      <SectionHeader title="Minha Conta" subtitle="Dados do motorista cadastrados no LocalStorage." />
+      <SectionHeader title="Minha Conta" subtitle="Dados do motorista cadastrados no sistema." />
       <Panel title="Dados cadastrais">
         <InfoGrid
           items={[
