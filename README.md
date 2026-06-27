@@ -12,8 +12,11 @@ Sistema de comprovacao de entregas da Marra Transportes.
 - PostgreSQL
 - JWT
 - Uploads em disco
+- Docker Compose
 
 ## Rodar localmente
+
+Frontend:
 
 ```bash
 npm install
@@ -26,22 +29,21 @@ Acesse:
 http://127.0.0.1:5173
 ```
 
-## Build de producao real
+## Producao com Docker
 
 ```bash
-npm ci
-npm run build
-npm start
+cp .env.example .env
+docker compose up -d --build
 ```
 
-Em producao com PM2:
+O Docker Compose sobe:
 
-```bash
-pm2 start ecosystem.config.cjs
-pm2 save
-```
+- `marra-app`
+- `marra-db`
+- volume do PostgreSQL
+- volume dos uploads
 
-Antes de iniciar em producao, configure o `.env` com `DATABASE_URL`, `JWT_SECRET`, `ADMIN_EMAIL` e `ADMIN_PASSWORD`.
+Antes de iniciar em producao, configure o `.env` com `POSTGRES_PASSWORD`, `DATABASE_URL`, `JWT_SECRET`, `ADMIN_EMAIL` e `ADMIN_PASSWORD`.
 
 A aplicacao real sobe API + frontend na porta:
 

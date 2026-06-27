@@ -135,82 +135,6 @@ async function saveDataUrl(dataUrl, prefix) {
   return `/uploads/${fileName}`;
 }
 
-async function ensureSchema() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS drivers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      cpf TEXT NOT NULL UNIQUE,
-      phone TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      plate TEXT NOT NULL,
-      cnh_file_name TEXT,
-      status TEXT NOT NULL DEFAULT 'Pendente',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS clients (
-      id TEXT PRIMARY KEY,
-      company_name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      extra_emails TEXT,
-      phone TEXT NOT NULL,
-      address TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS deliveries (
-      id TEXT PRIMARY KEY,
-      protocol TEXT NOT NULL UNIQUE,
-      driver_id TEXT NOT NULL REFERENCES drivers(id),
-      client_id TEXT NOT NULL REFERENCES clients(id),
-      document_type TEXT NOT NULL,
-      address TEXT NOT NULL,
-      plate TEXT NOT NULL,
-      notes TEXT,
-      nf_photo_url TEXT,
-      delivery_photo_url TEXT,
-      signature_url TEXT,
-      latitude NUMERIC,
-      longitude NUMERIC,
-      delivered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      status TEXT NOT NULL DEFAULT 'Concluida',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  if (process.env.MARRA_SEED_DEMO === 'true') {
-    await seedDemoData();
-  }
-}
-
-async function seedDemoData() {
-  const existing = await pool.query('SELECT COUNT(*)::int AS count FROM clients');
-  if (existing.rows[0].count > 0) return;
-
-  const driverId = 'driver-joao';
-  const hash = await bcrypt.hash('123456', 10);
-  await pool.query(
-    `INSERT INTO drivers (id, name, cpf, phone, email, password_hash, plate, cnh_file_name, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-     ON CONFLICT (id) DO NOTHING`,
-    [driverId, 'Joao Henrique Silva', '123.456.789-10', '(31) 98888-1010', 'joao@demo.com', hash, 'MTB-4A21', 'cnh-joao.pdf', 'Aprovado'],
-  );
-
-  const clients = [
-    ['client-expominas', 'Expominas Eventos', 'logistica@expominas.com.br', 'financeiro@expominas.com.br', '(31) 3333-1200', 'Av. Amazonas, 6200 - Gameleira, Belo Horizonte - MG'],
-    ['client-minascentro', 'Minascentro', 'recebimento@minascentro.com.br', 'eventos@minascentro.com.br', '(31) 3217-7900', 'Av. Augusto de Lima, 785 - Centro, Belo Horizonte - MG'],
-  ];
-  for (const client of clients) {
-    await pool.query(
-      `INSERT INTO clients (id, company_name, email, extra_emails, phone, address)
-       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
-      client,
-    );
-  }
-}
-
 async function nextProtocol() {
   const date = new Date();
   const ymd = date.toISOString().slice(0, 10).replaceAll('-', '');
@@ -386,7 +310,6 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));
 });
 
-await ensureSchema();
 app.listen(port, '0.0.0.0', () => {
   console.log(`Marra Transportes rodando em http://0.0.0.0:${port}`);
 });

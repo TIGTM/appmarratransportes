@@ -9,14 +9,69 @@ Este projeto agora e uma aplicacao real full-stack:
 - Senhas com bcrypt.
 - Uploads gravados em `uploads/`.
 
-## Requisitos do servidor
+## Requisitos do servidor para Docker
 
-- Node.js 18 ou superior
-- npm
 - Git
-- PM2 ja instalado
-- PostgreSQL
+- Docker
+- Docker Compose
+- Nginx ou Apache como proxy reverso
 - Porta interna escolhida: `5173`
+
+## Deploy recomendado com Docker
+
+Este e o mesmo padrao usado no `rondasmart`: um container para o app e outro para o PostgreSQL, com volumes persistentes.
+
+No servidor:
+
+```bash
+cd /www
+git clone https://github.com/TIGTM/appmarratransportes.git
+cd appmarratransportes
+cp .env.example .env
+nano .env
+docker compose up -d --build
+```
+
+Configure o `.env`:
+
+```env
+NODE_ENV=production
+PORT=5173
+POSTGRES_DB=marra_transportes
+POSTGRES_USER=marra_user
+POSTGRES_PASSWORD=SENHA_FORTE_AQUI
+DATABASE_URL=postgres://marra_user:SENHA_FORTE_AQUI@marra-db:5432/marra_transportes
+JWT_SECRET=coloque-um-segredo-grande-e-unico
+ADMIN_EMAIL=admin@seudominio.com.br
+ADMIN_PASSWORD=uma-senha-forte
+```
+
+Verifique:
+
+```bash
+docker compose ps
+docker compose logs -f marra-app
+curl http://127.0.0.1:5173/api/health
+```
+
+Atualizar versao:
+
+```bash
+cd /www/appmarratransportes
+git pull
+docker compose up -d --build
+```
+
+Backup Docker:
+
+```bash
+docker compose exec marra-db pg_dump -U marra_user marra_transportes > backup-marra-$(date +%F).sql
+docker run --rm -v appmarratransportes_marra-transportes-uploads:/uploads -v "$PWD":/backup alpine tar -czf /backup/uploads-marra-$(date +%F).tar.gz /uploads
+```
+
+## Deploy alternativo sem Docker
+
+Use esta opcao apenas se preferir instalar PostgreSQL direto no servidor.
 
 ## Criar banco PostgreSQL
 
@@ -66,7 +121,6 @@ DATABASE_URL=postgres://marra_user:SENHA_FORTE_AQUI@127.0.0.1:5432/marra_transpo
 JWT_SECRET=coloque-um-segredo-grande-e-unico
 ADMIN_EMAIL=admin@seudominio.com.br
 ADMIN_PASSWORD=uma-senha-forte
-MARRA_SEED_DEMO=false
 ```
 
 Verifique:
