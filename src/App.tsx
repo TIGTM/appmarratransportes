@@ -24,7 +24,6 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 type DriverStatus = 'Pendente' | 'Aprovado' | 'Reprovado' | 'Bloqueado';
@@ -1059,16 +1058,118 @@ function Receipt({ delivery, clients, drivers }: { delivery: Delivery; clients: 
   const [generating, setGenerating] = useState(false);
 
   const generatePdf = async () => {
-    if (!ref.current) return;
     setGenerating(true);
-    const canvas = await html2canvas(ref.current, { scale: 2, backgroundColor: '#ffffff' });
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const width = pdf.internal.pageSize.getWidth();
-    const height = (canvas.height * width) / canvas.width;
-    pdf.addImage(imgData, 'PNG', 0, 0, width, Math.min(height, pdf.internal.pageSize.getHeight()));
-    pdf.save(`${delivery.protocol}.pdf`);
-    setGenerating(false);
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 14;
+      const contentWidth = pageWidth - margin * 2;
+      let y = 14;
+
+      const loadImage = async (src?: string) => {
+        if (!src) return '';
+        if (src.startsWith('data:')) return src;
+        const response = await fetch(src);
+        const blob = await response.blob();
+        return await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('Falha ao carregar imagem do PDF.'));
+          reader.onload = () => resolve(String(reader.result));
+          reader.readAsDataURL(blob);
+        });
+      };
+
+      const addWrapped = (label: string, value: string, x: number, top: number, width: number) => {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8);
+        pdf.setTextColor(0, 90, 156);
+        pdf.text(label.toUpperCase(), x, top);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(11);
+        pdf.setTextColor(35, 35, 35);
+        const lines = pdf.splitTextToSize(value || '-', width);
+        pdf.text(lines, x, top + 6);
+        return top + 10 + lines.length * 5;
+      };
+
+      const addImageBox = (title: string, src: string, x: number, top: number, width: number, height: number) => {
+        pdf.setDrawColor(220, 226, 232);
+        pdf.roundedRect(x, top, width, height, 2, 2);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(0, 90, 156);
+        pdf.text(title, x + 4, top + 7);
+        if (src) {
+          const format = src.includes('image/png') ? 'PNG' : 'JPEG';
+          pdf.addImage(src, format, x + 4, top + 11, width - 8, height - 16, undefined, 'FAST');
+        }
+      };
+
+      pdf.setFillColor(0, 90, 156);
+      pdf.rect(0, 0, pageWidth, 36, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(16);
+      pdf.text('COMPROVANTE DE ENTREGA', margin, 18);
+      pdf.setFontSize(9);
+      pdf.text('Marra Transportes', margin, 27);
+
+      y = 48;
+      pdf.setDrawColor(0, 90, 156);
+      pdf.setFillColor(244, 248, 252);
+      pdf.roundedRect(margin, y, contentWidth, 18, 2, 2, 'FD');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(0, 90, 156);
+      pdf.text('PROTOCOLO', margin + 4, y + 6);
+      pdf.setFontSize(15);
+      pdf.setTextColor(10, 20, 35);
+      pdf.text(delivery.protocol, margin + 4, y + 14);
+      y += 28;
+
+      const left = margin;
+      const right = margin + contentWidth / 2 + 4;
+      const colWidth = contentWidth / 2 - 4;
+      let leftY = y;
+      let rightY = y;
+      leftY = addWrapped('Motorista', driver?.name ?? '-', left, leftY, colWidth);
+      rightY = addWrapped('Cliente', client?.companyName ?? '-', right, rightY, colWidth);
+      leftY = addWrapped('Documento', delivery.documentType, left, leftY, colWidth);
+      rightY = addWrapped('Placa', delivery.plate, right, rightY, colWidth);
+      leftY = addWrapped('Data', formatDate(delivery.date), left, leftY, colWidth);
+      rightY = addWrapped('Hora', delivery.time, right, rightY, colWidth);
+      y = Math.max(leftY, rightY) + 2;
+      y = addWrapped('Endereco', delivery.address, margin, y, contentWidth);
+      y = addWrapped('Localizacao aproximada', delivery.locationLabel || '-', margin, y, contentWidth);
+      y = addWrapped('GPS', `${delivery.latitude?.toFixed(6) ?? '-'}, ${delivery.longitude?.toFixed(6) ?? '-'}`, margin, y, contentWidth);
+      y = addWrapped('Observacoes', delivery.notes || '-', margin, y, contentWidth);
+
+      const nf = await loadImage(delivery.nfPhoto);
+      const entrega = await loadImage(delivery.deliveryPhoto);
+      const assinatura = await loadImage(delivery.signature);
+
+      pdf.addPage();
+      y = 14;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(14);
+      pdf.setTextColor(0, 90, 156);
+      pdf.text('EVIDENCIAS DA ENTREGA', margin, y);
+      y += 8;
+      addImageBox('Foto da NF', nf, margin, y, contentWidth, 72);
+      y += 80;
+      addImageBox('Foto da entrega', entrega, margin, y, contentWidth, 72);
+      y += 80;
+      addImageBox('Assinatura', assinatura, margin, y, contentWidth, 42);
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(120, 130, 145);
+      pdf.text('Documento gerado automaticamente pelo sistema Marra Transportes.', margin, pageHeight - 10);
+      pdf.save(`${delivery.protocol}.pdf`);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
@@ -1092,7 +1193,7 @@ function Receipt({ delivery, clients, drivers }: { delivery: Delivery; clients: 
         <main className="p-6 sm:p-8">
           <div className="mb-6 rounded-lg border border-marra-primary bg-sky-50 p-4">
             <div className="text-sm font-bold text-marra-primary">Protocolo</div>
-            <div className="text-3xl font-black text-slate-900">{delivery.protocol}</div>
+            <div className="break-all text-2xl font-black text-slate-900 sm:text-3xl">{delivery.protocol}</div>
           </div>
           <InfoGrid
             items={[
@@ -1105,7 +1206,6 @@ function Receipt({ delivery, clients, drivers }: { delivery: Delivery; clients: 
               ['Placa', delivery.plate],
               ['Localizacao aproximada', delivery.locationLabel || '-'],
               ['GPS', `${delivery.latitude?.toFixed(6) ?? '-'}, ${delivery.longitude?.toFixed(6) ?? '-'}`],
-              ['Mapa', mapsUrl(delivery.latitude, delivery.longitude) || '-'],
               ['Observacoes', delivery.notes || '-'],
             ]}
           />
@@ -1564,14 +1664,30 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
     }
   };
   return (
-    <div>
-      <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-marra-secondary bg-sky-50 p-4 text-center text-sm font-bold text-marra-primary">
-        <Camera size={24} />
-        <span className="mt-2">{processing ? 'Processando imagem...' : value ? `${label} carregada` : label}</span>
-        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => readImage(event.target.files?.[0])} />
-      </label>
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-black text-slate-800">{label}</div>
+          <div className={`mt-1 text-xs font-bold ${value ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {processing ? 'Processando imagem...' : value ? 'Imagem carregada' : 'Pendente'}
+          </div>
+        </div>
+        <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-marra-primary px-3 py-2 text-sm font-black text-marra-primary">
+          <Camera size={17} />
+          {value ? 'Trocar' : 'Adicionar'}
+          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => readImage(event.target.files?.[0])} />
+        </label>
+      </div>
       {error && <p className="mt-2 text-sm font-bold text-red-600">{error}</p>}
-      {value && <img src={value} alt={label} className="mt-3 h-32 w-full rounded-lg object-cover" />}
+      {value ? (
+        <img src={value} alt={label} className="h-40 w-full rounded-lg object-cover sm:h-32" />
+      ) : (
+        <label className="flex h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-marra-secondary bg-sky-50 p-4 text-center text-sm font-bold text-marra-primary">
+          <Camera size={22} />
+          <span className="mt-2">Toque para enviar</span>
+          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => readImage(event.target.files?.[0])} />
+        </label>
+      )}
     </div>
   );
 }
