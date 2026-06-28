@@ -629,9 +629,9 @@ function DriverShell({
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[280px_1fr]">
       <aside className={`${open ? 'fixed inset-0 z-40 block' : 'hidden'} bg-marra-primary p-4 text-white lg:sticky lg:top-0 lg:block lg:h-screen`}>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between rounded-lg bg-white p-4">
           <BrandMark />
-          <button className="lg:hidden" onClick={() => setOpen(false)}>
+          <button className="text-slate-700 lg:hidden" onClick={() => setOpen(false)}>
             <X />
           </button>
         </div>
@@ -677,10 +677,10 @@ function AdminShell({
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[290px_1fr]">
       <aside className={`${open ? 'fixed inset-0 z-40 block' : 'hidden'} bg-slate-950 p-4 text-white lg:sticky lg:top-0 lg:block lg:h-screen`}>
-        <div className="rounded-lg bg-marra-primary p-4">
+        <div className="rounded-lg bg-white p-4">
           <div className="flex items-center justify-between">
             <BrandMark />
-            <button className="lg:hidden" onClick={() => setOpen(false)}>
+            <button className="text-slate-700 lg:hidden" onClick={() => setOpen(false)}>
               <X />
             </button>
           </div>
