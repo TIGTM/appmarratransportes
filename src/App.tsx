@@ -395,15 +395,9 @@ function ToastStack({ toasts }: { toasts: Toast[] }) {
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="grid h-14 w-14 place-items-center rounded-lg bg-white p-1.5 shadow-sm">
-        <img src="/marra-logo-ui.png" alt="Marra Transportes" className="h-full w-full object-contain" />
+      <div className={`${compact ? 'h-14 w-24' : 'h-16 w-40'} grid place-items-center rounded-lg bg-white px-3 py-2 shadow-sm`}>
+        <img src="/marra-logo-full.png" alt="Marra Transportes" className="h-full w-full object-contain" />
       </div>
-      {!compact && (
-        <div className="leading-tight">
-          <div className="text-xl font-black uppercase tracking-normal text-white">Marra</div>
-          <div className="text-xs font-bold uppercase tracking-[0.24em] text-sky-100">Transportes</div>
-        </div>
-      )}
     </div>
   );
 }
