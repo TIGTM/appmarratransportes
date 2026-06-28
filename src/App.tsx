@@ -1651,32 +1651,160 @@ function TermsArchiveButton({
     setLoading(true);
     try {
       const { acceptance } = await apiRequest<{ acceptance: DriverTermAcceptance }>(`/api/drivers/${driver.id}/terms/latest`);
-      const content = [
-        'COMPROVANTE DE ACEITE ELETRONICO',
-        'Marra Transportes',
-        '',
-        `Motorista: ${acceptance.driverName}`,
-        `CPF: ${acceptance.driverCpf}`,
-        `E-mail: ${acceptance.driverEmail}`,
-        `Placa: ${acceptance.driverPlate}`,
-        `Categoria CNH: ${acceptance.cnhCategory || 'nao informada'}`,
-        `Comissao: ${acceptance.commissionRate}% do frete`,
-        `Versao do termo: ${acceptance.termsVersion}`,
-        `Aceito em: ${formatDateTime(acceptance.acceptedAt)}`,
-        `IP registrado: ${acceptance.acceptedIp || 'nao informado'}`,
-        `Dispositivo/Navegador: ${acceptance.userAgent || 'nao informado'}`,
-        '',
-        'Texto aceito:',
-        acceptance.termsText,
-      ].join('\n');
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `termo-aceite-${acceptance.driverName.toLowerCase().replaceAll(' ', '-')}-${acceptance.termsVersion}.txt`;
-      link.click();
-      URL.revokeObjectURL(url);
-      toast('success', 'Termo de aceite baixado.');
+      const hashBuffer = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(`${acceptance.id}|${acceptance.driverId}|${acceptance.acceptedAt}|${acceptance.termsText}`),
+      );
+      const verificationCode = Array.from(new Uint8Array(hashBuffer))
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('')
+        .slice(0, 24)
+        .toUpperCase();
+
+      const logo = await fetch('/marra-logo-tight.png')
+        .then((response) => response.blob())
+        .then(
+          (blob) =>
+            new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onerror = () => reject(new Error('Falha ao carregar logo.'));
+              reader.onload = () => resolve(String(reader.result));
+              reader.readAsDataURL(blob);
+            }),
+        )
+        .catch(() => '');
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 16;
+      const contentWidth = pageWidth - margin * 2;
+      let y = 16;
+
+      const addFooter = () => {
+        pdf.setDrawColor(225, 231, 239);
+        pdf.line(margin, pageHeight - 15, pageWidth - margin, pageHeight - 15);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text('Documento gerado automaticamente pelo sistema Marra Transportes.', margin, pageHeight - 9);
+        pdf.text(`Codigo de verificacao: ${verificationCode}`, pageWidth - margin, pageHeight - 9, { align: 'right' });
+      };
+
+      const ensureSpace = (height: number) => {
+        if (y + height <= pageHeight - 22) return;
+        addFooter();
+        pdf.addPage();
+        y = 18;
+      };
+
+      const addInfoBox = (label: string, value: string, x: number, top: number, width: number) => {
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(226, 232, 240);
+        pdf.roundedRect(x, top, width, 19, 2, 2, 'FD');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(label.toUpperCase(), x + 4, top + 6);
+        pdf.setFontSize(10);
+        pdf.setTextColor(15, 23, 42);
+        pdf.text(pdf.splitTextToSize(value || '-', width - 8), x + 4, top + 14);
+      };
+
+      pdf.setFillColor(0, 90, 156);
+      pdf.rect(0, 0, pageWidth, 42, 'F');
+      if (logo) {
+        pdf.setFillColor(255, 255, 255);
+        pdf.roundedRect(margin, 9, 44, 23, 2, 2, 'F');
+        pdf.addImage(logo, 'PNG', margin + 4, 11, 36, 18, undefined, 'FAST');
+      }
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(15);
+      pdf.setTextColor(255, 255, 255);
+      pdf.text('COMPROVANTE DE ACEITE ELETRONICO', margin + 52, 18);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.text('Termo de parceiro independente - Marra Transportes', margin + 52, 26);
+      pdf.text(`Versao ${acceptance.termsVersion}`, margin + 52, 33);
+
+      y = 54;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(0, 90, 156);
+      pdf.text('IDENTIFICACAO DO ACEITE', margin, y);
+      y += 6;
+
+      const half = contentWidth / 2 - 3;
+      addInfoBox('Motorista', acceptance.driverName, margin, y, half);
+      addInfoBox('CPF', acceptance.driverCpf, margin + half + 6, y, half);
+      y += 23;
+      addInfoBox('E-mail', acceptance.driverEmail, margin, y, half);
+      addInfoBox('Placa', acceptance.driverPlate, margin + half + 6, y, half);
+      y += 23;
+      addInfoBox('Categoria CNH', acceptance.cnhCategory ? `Categoria ${acceptance.cnhCategory}` : 'nao informada', margin, y, half);
+      addInfoBox('Comissao', `${acceptance.commissionRate}% do frete`, margin + half + 6, y, half);
+      y += 23;
+      addInfoBox('Data e hora do aceite', formatDateTime(acceptance.acceptedAt), margin, y, half);
+      addInfoBox('IP registrado', acceptance.acceptedIp || 'nao informado', margin + half + 6, y, half);
+      y += 23;
+
+      pdf.setFillColor(239, 246, 255);
+      pdf.setDrawColor(0, 90, 156);
+      pdf.roundedRect(margin, y, contentWidth, 18, 2, 2, 'FD');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(0, 90, 156);
+      pdf.text('CODIGO DE VERIFICACAO DO ACEITE', margin + 4, y + 6);
+      pdf.setFontSize(12);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(verificationCode, margin + 4, y + 14);
+      y += 28;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(0, 90, 156);
+      pdf.text('DECLARACAO DE ACEITE', margin, y);
+      y += 7;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.setTextColor(51, 65, 85);
+      const declaration = `O motorista acima identificado realizou aceite eletronico do termo operacional na data e hora registradas neste comprovante. O aceite foi arquivado no sistema da Marra Transportes com a versao do termo, dados cadastrais, identificacao tecnica do acesso e texto integral aceito.`;
+      const declarationLines = pdf.splitTextToSize(declaration, contentWidth);
+      pdf.text(declarationLines, margin, y);
+      y += declarationLines.length * 5 + 10;
+
+      ensureSpace(40);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(0, 90, 156);
+      pdf.text('TEXTO INTEGRAL ACEITO', margin, y);
+      y += 7;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.setTextColor(30, 41, 59);
+      const termLines = pdf.splitTextToSize(acceptance.termsText, contentWidth);
+      termLines.forEach((line: string) => {
+        ensureSpace(5);
+        pdf.text(line, margin, y);
+        y += 5;
+      });
+
+      y += 8;
+      ensureSpace(35);
+      pdf.setDrawColor(148, 163, 184);
+      pdf.line(margin, y + 12, margin + 74, y + 12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(acceptance.driverName, margin, y + 18);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(71, 85, 105);
+      pdf.text('Aceite eletronico registrado pelo proprio motorista', margin, y + 23);
+
+      addFooter();
+      pdf.save(`termo-aceite-${acceptance.driverName.toLowerCase().replaceAll(' ', '-')}-${acceptance.termsVersion}.pdf`);
+      toast('success', 'Termo de aceite em PDF baixado.');
     } catch (error) {
       toast('error', error instanceof Error ? error.message : 'Nao foi possivel baixar o termo.');
     } finally {
@@ -1691,7 +1819,7 @@ function TermsArchiveButton({
       disabled={loading || !driver.termsAcceptedAt}
       className={`${className} inline-flex items-center gap-2 rounded-lg bg-marra-primary px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-slate-300`}
     >
-      <Download size={17} /> {loading ? 'Baixando termo...' : 'Baixar termo aceito'}
+      <Download size={17} /> {loading ? 'Gerando PDF...' : 'Baixar termo aceito em PDF'}
     </button>
   );
 }
