@@ -35,10 +35,13 @@ CREATE TABLE IF NOT EXISTS deliveries (
   signature_url TEXT,
   latitude NUMERIC,
   longitude NUMERIC,
+  location_label TEXT,
   delivered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   status TEXT NOT NULL DEFAULT 'Concluida',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS location_label TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_drivers_email ON drivers(email);
 CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status);

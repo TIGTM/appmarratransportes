@@ -110,6 +110,7 @@ function mapDelivery(row) {
     signature: row.signature_url || '',
     latitude: row.latitude === null ? undefined : Number(row.latitude),
     longitude: row.longitude === null ? undefined : Number(row.longitude),
+    locationLabel: row.location_label || '',
     date: deliveredAt.toISOString().slice(0, 10),
     time: deliveredAt.toTimeString().slice(0, 5),
     status: row.status,
@@ -277,7 +278,7 @@ app.delete('/api/me', authenticate, async (req, res) => {
 
 app.post('/api/deliveries', authenticate, async (req, res) => {
   if (req.user.role !== 'driver') return res.status(403).json({ message: 'Apenas motoristas registram entregas.' });
-  const { clientId, documentType, address, plate, notes, nfPhoto, deliveryPhoto, signature, latitude, longitude } = req.body || {};
+  const { clientId, documentType, address, plate, notes, nfPhoto, deliveryPhoto, signature, latitude, longitude, locationLabel } = req.body || {};
   if (!clientId || !documentType || !address || !plate) {
     return res.status(400).json({ message: 'Dados obrigatorios da entrega incompletos.' });
   }
@@ -301,10 +302,10 @@ app.post('/api/deliveries', authenticate, async (req, res) => {
 
   const result = await pool.query(
     `INSERT INTO deliveries
-      (id, protocol, driver_id, client_id, document_type, address, plate, notes, nf_photo_url, delivery_photo_url, signature_url, latitude, longitude, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'Concluida')
+      (id, protocol, driver_id, client_id, document_type, address, plate, notes, nf_photo_url, delivery_photo_url, signature_url, latitude, longitude, location_label, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'Concluida')
      RETURNING *`,
-    [id, protocol, req.user.driverId, clientId, documentType, address, plate, notes || '', nfPhotoUrl, deliveryPhotoUrl, signatureUrl, latitude || null, longitude || null],
+    [id, protocol, req.user.driverId, clientId, documentType, address, plate, notes || '', nfPhotoUrl, deliveryPhotoUrl, signatureUrl, latitude || null, longitude || null, locationLabel || ''],
   );
   res.status(201).json({ delivery: mapDelivery(result.rows[0]) });
 });

@@ -80,6 +80,7 @@ type Delivery = {
   signature?: string;
   latitude?: number;
   longitude?: number;
+  locationLabel?: string;
   date: string;
   time: string;
   status: 'Concluida';
@@ -90,6 +91,32 @@ type Toast = { id: string; type: 'success' | 'error'; message: string };
 const TOKEN_KEY = 'marra:token';
 
 const today = new Date().toISOString().slice(0, 10);
+
+const mapsUrl = (latitude?: number, longitude?: number) =>
+  latitude === undefined || longitude === undefined ? '' : `https://www.google.com/maps?q=${latitude},${longitude}`;
+
+const osmEmbedUrl = (latitude?: number, longitude?: number) => {
+  if (latitude === undefined || longitude === undefined) return '';
+  const delta = 0.004;
+  const left = longitude - delta;
+  const right = longitude + delta;
+  const bottom = latitude - delta;
+  const top = latitude + delta;
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${left}%2C${bottom}%2C${right}%2C${top}&layer=mapnik&marker=${latitude}%2C${longitude}`;
+};
+
+async function reverseGeocode(latitude: number, longitude: number) {
+  try {
+    const response = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=pt`,
+    );
+    if (!response.ok) return '';
+    const data = await response.json();
+    return [data.locality, data.principalSubdivision, data.countryName].filter(Boolean).join(', ');
+  } catch {
+    return '';
+  }
+}
 
 const blankDriver: Driver = {
   id: '',
@@ -806,6 +833,7 @@ function NewDeliveryScreen({
   const [deliveryPhoto, setDeliveryPhoto] = useState('');
   const [signature, setSignature] = useState('');
   const [coords, setCoords] = useState<{ latitude?: number; longitude?: number }>({});
+  const [locationLabel, setLocationLabel] = useState('');
   const [loadingGps, setLoadingGps] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -821,9 +849,13 @@ function NewDeliveryScreen({
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setCoords({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-        toast('success', 'Localizacao capturada.');
+      async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        setCoords({ latitude, longitude });
+        const label = await reverseGeocode(latitude, longitude);
+        setLocationLabel(label || 'Endereco aproximado nao identificado');
+        toast('success', label ? 'Localizacao capturada com endereco aproximado.' : 'Localizacao capturada.');
         setLoadingGps(false);
       },
       () => {
@@ -874,6 +906,7 @@ function NewDeliveryScreen({
         signature,
         latitude: coords.latitude,
         longitude: coords.longitude,
+        locationLabel,
         date: now.toISOString().slice(0, 10),
         time: now.toTimeString().slice(0, 5),
         status: 'Concluida',
@@ -903,16 +936,21 @@ function NewDeliveryScreen({
         </div>
         <aside className="space-y-4">
           <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="font-black text-slate-900">Itens obrigatorios</h3>
+            <div className="mt-3 space-y-2">
+              <RequirementItem done={Boolean(nfPhoto)} label="Foto da nota fiscal" />
+              <RequirementItem done={Boolean(deliveryPhoto)} label="Foto da entrega" />
+              <RequirementItem done={Boolean(signature)} label="Assinatura" />
+              <RequirementItem done={coords.latitude !== undefined && coords.longitude !== undefined} label="Localizacao GPS" />
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="font-black text-slate-900">GPS</h3>
             <p className="mt-2 text-sm text-slate-500">Captura real via navegador, mediante permissao do dispositivo.</p>
             <button type="button" onClick={captureGps} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-marra-primary px-4 py-3 font-bold text-white">
               <MapPin size={18} /> {loadingGps ? 'Capturando...' : 'Capturar Localizacao'}
             </button>
-            <div className="mt-4 rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-700">
-              Lat: {coords.latitude?.toFixed(6) ?? '--'}
-              <br />
-              Long: {coords.longitude?.toFixed(6) ?? '--'}
-            </div>
+            <LocationPreview latitude={coords.latitude} longitude={coords.longitude} label={locationLabel} />
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="font-black text-slate-900">Data e hora</h3>
@@ -993,11 +1031,13 @@ function DeliveryDetails({
               ['Endereco', delivery.address],
               ['Data', formatDate(delivery.date)],
               ['Hora', delivery.time],
+              ['Localizacao aproximada', delivery.locationLabel || '-'],
               ['Latitude', delivery.latitude?.toFixed(6) ?? '-'],
               ['Longitude', delivery.longitude?.toFixed(6) ?? '-'],
               ['Observacoes', delivery.notes || '-'],
             ]}
           />
+          <LocationPreview latitude={delivery.latitude} longitude={delivery.longitude} label={delivery.locationLabel} />
         </div>
         <div className="space-y-4">
           <button onClick={onReceipt} className="flex w-full items-center justify-center gap-2 rounded-lg bg-marra-primary px-5 py-3 font-black text-white">
@@ -1063,7 +1103,9 @@ function Receipt({ delivery, clients, drivers }: { delivery: Delivery; clients: 
               ['Data', formatDate(delivery.date)],
               ['Hora', delivery.time],
               ['Placa', delivery.plate],
+              ['Localizacao aproximada', delivery.locationLabel || '-'],
               ['GPS', `${delivery.latitude?.toFixed(6) ?? '-'}, ${delivery.longitude?.toFixed(6) ?? '-'}`],
+              ['Mapa', mapsUrl(delivery.latitude, delivery.longitude) || '-'],
               ['Observacoes', delivery.notes || '-'],
             ]}
           />
@@ -1481,19 +1523,54 @@ function TextArea({
 }
 
 function ImageUpload({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  const readImage = (file?: File) => {
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
+
+  const compressImage = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Nao foi possivel ler a imagem.'));
+      reader.onload = () => {
+        const original = String(reader.result);
+        const image = new Image();
+        image.onerror = () => resolve(original);
+        image.onload = () => {
+          const maxSide = 1400;
+          const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+          const width = Math.max(1, Math.round(image.width * scale));
+          const height = Math.max(1, Math.round(image.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext('2d')!.drawImage(image, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        };
+        image.src = original;
+      };
+      reader.readAsDataURL(file);
+    });
+
+  const readImage = async (file?: File) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => onChange(String(reader.result));
-    reader.readAsDataURL(file);
+    setProcessing(true);
+    setError('');
+    try {
+      onChange(await compressImage(file));
+    } catch {
+      setError('Nao foi possivel carregar esta imagem. Tente outra foto.');
+      onChange('');
+    } finally {
+      setProcessing(false);
+    }
   };
   return (
     <div>
       <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-marra-secondary bg-sky-50 p-4 text-center text-sm font-bold text-marra-primary">
         <Camera size={24} />
-        <span className="mt-2">{value ? 'Imagem carregada' : label}</span>
-        <input type="file" accept="image/*" className="hidden" onChange={(event) => readImage(event.target.files?.[0])} />
+        <span className="mt-2">{processing ? 'Processando imagem...' : value ? `${label} carregada` : label}</span>
+        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => readImage(event.target.files?.[0])} />
       </label>
+      {error && <p className="mt-2 text-sm font-bold text-red-600">{error}</p>}
       {value && <img src={value} alt={label} className="mt-3 h-32 w-full rounded-lg object-cover" />}
     </div>
   );
@@ -1588,6 +1665,15 @@ function StatusButton({ label, onClick, danger = false, disabled = false }: { la
   );
 }
 
+function RequirementItem({ done, label }: { done: boolean; label: string }) {
+  return (
+    <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${done ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+      {done ? <CheckCircle2 size={17} /> : <XCircle size={17} />}
+      {label}
+    </div>
+  );
+}
+
 function InfoGrid({ items }: { items: [string, string][] }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -1609,6 +1695,38 @@ function ImagePreview({ title, src }: { title: string; src?: string }) {
         <img src={src} alt={title} className="h-44 w-full rounded-lg object-cover" />
       ) : (
         <div className="grid h-44 place-items-center rounded-lg bg-slate-50 text-sm font-bold text-slate-400">Sem imagem</div>
+      )}
+    </div>
+  );
+}
+
+function LocationPreview({ latitude, longitude, label }: { latitude?: number; longitude?: number; label?: string }) {
+  const hasLocation = latitude !== undefined && longitude !== undefined;
+  const map = osmEmbedUrl(latitude, longitude);
+  const link = mapsUrl(latitude, longitude);
+
+  if (!hasLocation) {
+    return <div className="mt-4 rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-500">Localizacao ainda nao capturada.</div>;
+  }
+
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-700">
+        <div className="text-slate-900">{label || 'Endereco aproximado nao identificado'}</div>
+        <div className="mt-2 text-xs text-slate-500">
+          Lat: {latitude.toFixed(6)} | Long: {longitude.toFixed(6)}
+        </div>
+        <a href={link} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-black text-marra-primary">
+          Abrir no mapa
+        </a>
+      </div>
+      {map && (
+        <iframe
+          title="Mapa aproximado da entrega"
+          src={map}
+          className="h-44 w-full rounded-lg border border-slate-200"
+          loading="lazy"
+        />
       )}
     </div>
   );
