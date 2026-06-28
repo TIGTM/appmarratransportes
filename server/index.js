@@ -41,9 +41,25 @@ const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+app.set('trust proxy', true);
 app.use(cors());
 app.use(express.json({ limit: '30mb' }));
 app.use('/uploads', express.static(uploadsDir, { maxAge: '7d' }));
+
+function normalizeIp(ip = '') {
+  return String(ip).replace(/^::ffff:/, '').trim();
+}
+
+function getClientIp(req) {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return normalizeIp(forwardedFor.split(',')[0]);
+  }
+  if (Array.isArray(forwardedFor) && forwardedFor[0]) {
+    return normalizeIp(forwardedFor[0].split(',')[0]);
+  }
+  return normalizeIp(req.ip || req.socket?.remoteAddress || '');
+}
 
 function signSession(payload) {
   return jwt.sign(payload, jwtSecret, { expiresIn: '12h' });
@@ -145,7 +161,7 @@ async function createTermAcceptance(driver, req) {
       driverCommissionRate,
       currentTermsVersion,
       driverTermsText(driver),
-      req.ip,
+      getClientIp(req),
       req.headers['user-agent'] || '',
     ],
   );
@@ -287,7 +303,7 @@ app.post('/api/drivers/register', async (req, res) => {
       `INSERT INTO drivers
         (id, name, cpf, phone, email, password_hash, plate, cnh_category, cnh_file_name, cnh_file_url, commission_rate, terms_accepted_at, terms_version, terms_ip, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,'Pendente') RETURNING *`,
-      [id, name, cpf, phone, email, hash, plate, cnhCategory, cnhFileName || null, cnhFileUrl, driverCommissionRate, currentTermsVersion, req.ip],
+      [id, name, cpf, phone, email, hash, plate, cnhCategory, cnhFileName || null, cnhFileUrl, driverCommissionRate, currentTermsVersion, getClientIp(req)],
     );
     await createTermAcceptance(result.rows[0], req);
     res.status(201).json({ driver: mapDriver(result.rows[0]) });
@@ -303,7 +319,7 @@ app.post('/api/drivers/terms/accept', authenticate, async (req, res) => {
     `UPDATE drivers
      SET terms_accepted_at = NOW(), terms_version = $1, terms_ip = $2, commission_rate = COALESCE(commission_rate, $3)
      WHERE id = $4 RETURNING *`,
-    [currentTermsVersion, req.ip, driverCommissionRate, req.user.driverId],
+    [currentTermsVersion, getClientIp(req), driverCommissionRate, req.user.driverId],
   );
   if (!result.rows[0]) return res.status(404).json({ message: 'Motorista nao encontrado.' });
   await createTermAcceptance(result.rows[0], req);
