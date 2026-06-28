@@ -53,6 +53,8 @@ type Driver = {
   password: string;
   plate: string;
   cnhFileName?: string;
+  cnhFileUrl?: string;
+  cnhFileData?: string;
   status: DriverStatus;
 };
 
@@ -557,8 +559,19 @@ function AdminLoginScreen({ onLogin, onBack }: { onLogin: (email: string, passwo
 function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (driver: Driver) => Promise<void> }) {
   const [driver, setDriver] = useState<Driver>(blankDriver);
   const [cnhFileName, setCnhFileName] = useState('');
+  const [cnhFileData, setCnhFileData] = useState('');
   const [accepted, setAccepted] = useState(false);
   const update = (key: keyof Driver, value: string) => setDriver((item) => ({ ...item, [key]: value }));
+
+  const readCnh = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCnhFileName(file.name);
+      setCnhFileData(String(reader.result));
+    };
+    reader.readAsDataURL(file);
+  };
 
   return (
     <LoginFrame>
@@ -566,7 +579,7 @@ function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (drive
         onSubmit={async (event) => {
           event.preventDefault();
           if (!accepted) return;
-          await onSave({ ...driver, cnhFileName });
+          await onSave({ ...driver, cnhFileName, cnhFileData });
         }}
         className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-7 shadow-soft"
       >
@@ -591,8 +604,9 @@ function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (drive
           <span>{cnhFileName || 'Anexar CNH'}</span>
           <input
             type="file"
+            accept="image/*,.pdf,application/pdf"
             className="hidden"
-            onChange={(event) => setCnhFileName(event.target.files?.[0]?.name ?? '')}
+            onChange={(event) => readCnh(event.target.files?.[0])}
           />
           <Camera size={18} />
         </label>
@@ -1391,6 +1405,20 @@ function DriversManager({
                       ['Status', driver.status],
                     ]}
                   />
+                  {driver.cnhFileUrl ? (
+                    <a
+                      href={driver.cnhFileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-marra-primary px-4 py-3 text-sm font-black text-white"
+                    >
+                      <FileText size={17} /> Abrir documento CNH
+                    </a>
+                  ) : (
+                    <div className="mt-4 rounded-lg bg-amber-50 p-4 text-sm font-bold text-amber-700">
+                      Documento nao disponivel para visualizacao. Este cadastro possui apenas o nome do arquivo.
+                    </div>
+                  )}
                 </div>
               )}
             </div>

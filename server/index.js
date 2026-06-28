@@ -79,6 +79,7 @@ function mapDriver(row) {
     email: row.email,
     plate: row.plate,
     cnhFileName: row.cnh_file_name,
+    cnhFileUrl: row.cnh_file_url || '',
     status: row.status,
   };
 }
@@ -129,6 +130,7 @@ async function saveDataUrl(dataUrl, prefix) {
     'image/png': 'png',
     'image/webp': 'webp',
     'image/svg+xml': 'svg',
+    'application/pdf': 'pdf',
   }[mime] || 'bin';
   const fileName = `${prefix}-${crypto.randomUUID()}.${extension}`;
   await fs.mkdir(uploadsDir, { recursive: true });
@@ -199,17 +201,18 @@ app.get('/api/bootstrap', authenticate, async (req, res) => {
 });
 
 app.post('/api/drivers/register', async (req, res) => {
-  const { name, cpf, phone, email, password, plate, cnhFileName } = req.body || {};
+  const { name, cpf, phone, email, password, plate, cnhFileName, cnhFileData } = req.body || {};
   if (!name || !cpf || !phone || !email || !password || !plate) {
     return res.status(400).json({ message: 'Preencha todos os campos obrigatorios.' });
   }
   const hash = await bcrypt.hash(password, 10);
   const id = `driver-${crypto.randomUUID()}`;
+  const cnhFileUrl = await saveDataUrl(cnhFileData, 'cnh');
   try {
     const result = await pool.query(
-      `INSERT INTO drivers (id, name, cpf, phone, email, password_hash, plate, cnh_file_name, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pendente') RETURNING *`,
-      [id, name, cpf, phone, email, hash, plate, cnhFileName || null],
+      `INSERT INTO drivers (id, name, cpf, phone, email, password_hash, plate, cnh_file_name, cnh_file_url, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Pendente') RETURNING *`,
+      [id, name, cpf, phone, email, hash, plate, cnhFileName || null, cnhFileUrl],
     );
     res.status(201).json({ driver: mapDriver(result.rows[0]) });
   } catch (error) {

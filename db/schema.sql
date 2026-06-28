@@ -7,9 +7,12 @@ CREATE TABLE IF NOT EXISTS drivers (
   password_hash TEXT NOT NULL,
   plate TEXT NOT NULL,
   cnh_file_name TEXT,
+  cnh_file_url TEXT,
   status TEXT NOT NULL DEFAULT 'Pendente',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS cnh_file_url TEXT;
 
 CREATE TABLE IF NOT EXISTS clients (
   id TEXT PRIMARY KEY,
