@@ -95,6 +95,22 @@ type Delivery = {
 
 type Toast = { id: string; type: 'success' | 'error'; message: string };
 
+type DriverTermAcceptance = {
+  id: string;
+  driverId: string;
+  driverName: string;
+  driverCpf: string;
+  driverEmail: string;
+  driverPlate: string;
+  cnhCategory?: string;
+  commissionRate: number;
+  termsVersion: string;
+  termsText: string;
+  acceptedAt: string;
+  acceptedIp?: string;
+  userAgent?: string;
+};
+
 const TOKEN_KEY = 'marra:token';
 const TERMS_VERSION = '2026-06-28';
 const DRIVER_COMMISSION_RATE = 16;
@@ -167,6 +183,10 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
 
 function formatDate(date: string) {
   return date.split('-').reverse().join('/');
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
 }
 
 function protocolFor(next: number) {
@@ -1513,6 +1533,7 @@ function DriversManager({
                       Documento nao disponivel para visualizacao. Este cadastro possui apenas o nome do arquivo.
                     </div>
                   )}
+                  <TermsArchiveButton driver={driver} toast={toast} className="mt-3" />
                 </div>
               )}
             </div>
@@ -1591,6 +1612,7 @@ function AccountScreen({ driver, onDeleteAccount, toast }: { driver: Driver; onD
             ['Status', driver.status],
           ]}
         />
+        <TermsArchiveButton driver={driver} toast={toast} className="mt-4" />
       </Panel>
       <Panel title="Privacidade e dados">
         <p className="text-sm leading-6 text-slate-600">
@@ -1611,6 +1633,66 @@ function AccountScreen({ driver, onDeleteAccount, toast }: { driver: Driver; onD
         </button>
       </Panel>
     </div>
+  );
+}
+
+function TermsArchiveButton({
+  driver,
+  toast,
+  className = '',
+}: {
+  driver: Driver;
+  toast: (type: Toast['type'], message: string) => void;
+  className?: string;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const download = async () => {
+    setLoading(true);
+    try {
+      const { acceptance } = await apiRequest<{ acceptance: DriverTermAcceptance }>(`/api/drivers/${driver.id}/terms/latest`);
+      const content = [
+        'COMPROVANTE DE ACEITE ELETRONICO',
+        'Marra Transportes',
+        '',
+        `Motorista: ${acceptance.driverName}`,
+        `CPF: ${acceptance.driverCpf}`,
+        `E-mail: ${acceptance.driverEmail}`,
+        `Placa: ${acceptance.driverPlate}`,
+        `Categoria CNH: ${acceptance.cnhCategory || 'nao informada'}`,
+        `Comissao: ${acceptance.commissionRate}% do frete`,
+        `Versao do termo: ${acceptance.termsVersion}`,
+        `Aceito em: ${formatDateTime(acceptance.acceptedAt)}`,
+        `IP registrado: ${acceptance.acceptedIp || 'nao informado'}`,
+        `Dispositivo/Navegador: ${acceptance.userAgent || 'nao informado'}`,
+        '',
+        'Texto aceito:',
+        acceptance.termsText,
+      ].join('\n');
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `termo-aceite-${acceptance.driverName.toLowerCase().replaceAll(' ', '-')}-${acceptance.termsVersion}.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast('success', 'Termo de aceite baixado.');
+    } catch (error) {
+      toast('error', error instanceof Error ? error.message : 'Nao foi possivel baixar o termo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={download}
+      disabled={loading || !driver.termsAcceptedAt}
+      className={`${className} inline-flex items-center gap-2 rounded-lg bg-marra-primary px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-slate-300`}
+    >
+      <Download size={17} /> {loading ? 'Baixando termo...' : 'Baixar termo aceito'}
+    </button>
   );
 }
 

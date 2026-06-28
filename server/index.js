@@ -91,6 +91,67 @@ function mapDriver(row) {
   };
 }
 
+function driverTermsText(driver) {
+  return [
+    'TERMO DE PARCEIRO INDEPENDENTE - MARRA TRANSPORTES',
+    `Versao: ${currentTermsVersion}`,
+    '',
+    `Motorista: ${driver.name}`,
+    `CPF: ${driver.cpf}`,
+    `E-mail: ${driver.email}`,
+    `Placa do veiculo: ${driver.plate}`,
+    `Categoria da CNH: ${driver.cnh_category || 'nao informada'}`,
+    `Comissao operacional: ${driverCommissionRate}% do valor do frete`,
+    '',
+    'Declaro que atuo como parceiro independente da Marra Transportes, sem vinculo empregaticio, usando a plataforma para registrar entregas e comprovantes operacionais.',
+    'Comprometo-me a manter conduta etica, registrar informacoes verdadeiras, preservar o veiculo utilizado, respeitar clientes atendidos e anexar somente fotos, assinaturas e dados relacionados ao servico realizado.',
+    'Declaro ciencia de que para atuar e necessario possuir CNH categoria C, D ou E valida, e que a remuneracao por comissao corresponde a 16% do valor do frete, conforme politica operacional vigente.',
+    'O aceite eletronico deste termo fica arquivado pela Marra Transportes com data, hora, versao do termo e identificacao tecnica do acesso.',
+  ].join('\n');
+}
+
+function mapTermAcceptance(row) {
+  return {
+    id: row.id,
+    driverId: row.driver_id,
+    driverName: row.driver_name,
+    driverCpf: row.driver_cpf,
+    driverEmail: row.driver_email,
+    driverPlate: row.driver_plate,
+    cnhCategory: row.cnh_category || '',
+    commissionRate: Number(row.commission_rate || driverCommissionRate),
+    termsVersion: row.terms_version,
+    termsText: row.terms_text,
+    acceptedAt: new Date(row.accepted_at).toISOString(),
+    acceptedIp: row.accepted_ip || '',
+    userAgent: row.user_agent || '',
+  };
+}
+
+async function createTermAcceptance(driver, req) {
+  const result = await pool.query(
+    `INSERT INTO driver_terms_acceptances
+      (id, driver_id, driver_name, driver_cpf, driver_email, driver_plate, cnh_category, commission_rate, terms_version, terms_text, accepted_ip, user_agent)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     RETURNING *`,
+    [
+      `terms-${crypto.randomUUID()}`,
+      driver.id,
+      driver.name,
+      driver.cpf,
+      driver.email,
+      driver.plate,
+      driver.cnh_category || null,
+      driverCommissionRate,
+      currentTermsVersion,
+      driverTermsText(driver),
+      req.ip,
+      req.headers['user-agent'] || '',
+    ],
+  );
+  return mapTermAcceptance(result.rows[0]);
+}
+
 function mapClient(row) {
   return {
     id: row.id,
@@ -228,6 +289,7 @@ app.post('/api/drivers/register', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,'Pendente') RETURNING *`,
       [id, name, cpf, phone, email, hash, plate, cnhCategory, cnhFileName || null, cnhFileUrl, driverCommissionRate, currentTermsVersion, req.ip],
     );
+    await createTermAcceptance(result.rows[0], req);
     res.status(201).json({ driver: mapDriver(result.rows[0]) });
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ message: 'CPF ou e-mail ja cadastrado.' });
@@ -244,7 +306,43 @@ app.post('/api/drivers/terms/accept', authenticate, async (req, res) => {
     [currentTermsVersion, req.ip, driverCommissionRate, req.user.driverId],
   );
   if (!result.rows[0]) return res.status(404).json({ message: 'Motorista nao encontrado.' });
+  await createTermAcceptance(result.rows[0], req);
   res.json({ driver: mapDriver(result.rows[0]) });
+});
+
+app.get('/api/drivers/:id/terms/latest', authenticate, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.driverId !== req.params.id) {
+    return res.status(403).json({ message: 'Acesso ao termo nao autorizado.' });
+  }
+
+  const stored = await pool.query(
+    'SELECT * FROM driver_terms_acceptances WHERE driver_id = $1 ORDER BY accepted_at DESC LIMIT 1',
+    [req.params.id],
+  );
+  if (stored.rows[0]) return res.json({ acceptance: mapTermAcceptance(stored.rows[0]) });
+
+  const driverResult = await pool.query('SELECT * FROM drivers WHERE id = $1', [req.params.id]);
+  const driver = driverResult.rows[0];
+  if (!driver) return res.status(404).json({ message: 'Motorista nao encontrado.' });
+  if (!driver.terms_accepted_at) return res.status(404).json({ message: 'Motorista ainda nao possui termo aceito.' });
+
+  res.json({
+    acceptance: {
+      id: `legacy-${driver.id}`,
+      driverId: driver.id,
+      driverName: driver.name,
+      driverCpf: driver.cpf,
+      driverEmail: driver.email,
+      driverPlate: driver.plate,
+      cnhCategory: driver.cnh_category || '',
+      commissionRate: Number(driver.commission_rate || driverCommissionRate),
+      termsVersion: driver.terms_version || currentTermsVersion,
+      termsText: driverTermsText(driver),
+      acceptedAt: new Date(driver.terms_accepted_at).toISOString(),
+      acceptedIp: driver.terms_ip || '',
+      userAgent: '',
+    },
+  });
 });
 
 app.patch('/api/drivers/:id/status', authenticate, requireAdmin, async (req, res) => {

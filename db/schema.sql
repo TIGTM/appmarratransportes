@@ -24,6 +24,23 @@ ALTER TABLE drivers ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
 ALTER TABLE drivers ADD COLUMN IF NOT EXISTS terms_version TEXT;
 ALTER TABLE drivers ADD COLUMN IF NOT EXISTS terms_ip TEXT;
 
+CREATE TABLE IF NOT EXISTS driver_terms_acceptances (
+  id TEXT PRIMARY KEY,
+  driver_id TEXT NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  driver_name TEXT NOT NULL,
+  driver_cpf TEXT NOT NULL,
+  driver_email TEXT NOT NULL,
+  driver_plate TEXT NOT NULL,
+  cnh_category TEXT,
+  commission_rate NUMERIC NOT NULL DEFAULT 16,
+  terms_version TEXT NOT NULL,
+  terms_text TEXT NOT NULL,
+  accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  accepted_ip TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS clients (
   id TEXT PRIMARY KEY,
   company_name TEXT NOT NULL,
@@ -58,6 +75,8 @@ ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS location_label TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_drivers_email ON drivers(email);
 CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status);
+CREATE INDEX IF NOT EXISTS idx_driver_terms_driver ON driver_terms_acceptances(driver_id);
+CREATE INDEX IF NOT EXISTS idx_driver_terms_accepted_at ON driver_terms_acceptances(accepted_at);
 CREATE INDEX IF NOT EXISTS idx_clients_company_name ON clients(company_name);
 CREATE INDEX IF NOT EXISTS idx_deliveries_driver ON deliveries(driver_id);
 CREATE INDEX IF NOT EXISTS idx_deliveries_client ON deliveries(client_id);
