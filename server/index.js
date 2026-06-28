@@ -20,6 +20,9 @@ const port = Number(process.env.PORT || 5173);
 const jwtSecret = process.env.JWT_SECRET || 'dev-only-change-me';
 const adminEmail = process.env.ADMIN_EMAIL || 'admin@marra.com';
 const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+const currentTermsVersion = '2026-06-28';
+const driverCommissionRate = 16;
+const validCnhCategories = ['C', 'D', 'E'];
 
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL nao configurado. Copie .env.example para .env e ajuste o PostgreSQL.');
@@ -78,8 +81,12 @@ function mapDriver(row) {
     phone: row.phone,
     email: row.email,
     plate: row.plate,
+    cnhCategory: row.cnh_category || '',
     cnhFileName: row.cnh_file_name,
     cnhFileUrl: row.cnh_file_url || '',
+    commissionRate: Number(row.commission_rate || driverCommissionRate),
+    termsAcceptedAt: row.terms_accepted_at ? new Date(row.terms_accepted_at).toISOString() : '',
+    termsVersion: row.terms_version || '',
     status: row.status,
   };
 }
@@ -201,24 +208,43 @@ app.get('/api/bootstrap', authenticate, async (req, res) => {
 });
 
 app.post('/api/drivers/register', async (req, res) => {
-  const { name, cpf, phone, email, password, plate, cnhFileName, cnhFileData } = req.body || {};
+  const { name, cpf, phone, email, password, plate, cnhCategory, cnhFileName, cnhFileData, acceptedTerms } = req.body || {};
   if (!name || !cpf || !phone || !email || !password || !plate) {
     return res.status(400).json({ message: 'Preencha todos os campos obrigatorios.' });
+  }
+  if (!validCnhCategories.includes(cnhCategory)) {
+    return res.status(400).json({ message: 'A categoria da CNH deve ser C, D ou E.' });
+  }
+  if (!acceptedTerms) {
+    return res.status(400).json({ message: 'Aceite os termos de uso para concluir o cadastro.' });
   }
   const hash = await bcrypt.hash(password, 10);
   const id = `driver-${crypto.randomUUID()}`;
   const cnhFileUrl = await saveDataUrl(cnhFileData, 'cnh');
   try {
     const result = await pool.query(
-      `INSERT INTO drivers (id, name, cpf, phone, email, password_hash, plate, cnh_file_name, cnh_file_url, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Pendente') RETURNING *`,
-      [id, name, cpf, phone, email, hash, plate, cnhFileName || null, cnhFileUrl],
+      `INSERT INTO drivers
+        (id, name, cpf, phone, email, password_hash, plate, cnh_category, cnh_file_name, cnh_file_url, commission_rate, terms_accepted_at, terms_version, terms_ip, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,'Pendente') RETURNING *`,
+      [id, name, cpf, phone, email, hash, plate, cnhCategory, cnhFileName || null, cnhFileUrl, driverCommissionRate, currentTermsVersion, req.ip],
     );
     res.status(201).json({ driver: mapDriver(result.rows[0]) });
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ message: 'CPF ou e-mail ja cadastrado.' });
     throw error;
   }
+});
+
+app.post('/api/drivers/terms/accept', authenticate, async (req, res) => {
+  if (req.user.role !== 'driver') return res.status(403).json({ message: 'Apenas motoristas aceitam os termos operacionais.' });
+  const result = await pool.query(
+    `UPDATE drivers
+     SET terms_accepted_at = NOW(), terms_version = $1, terms_ip = $2, commission_rate = COALESCE(commission_rate, $3)
+     WHERE id = $4 RETURNING *`,
+    [currentTermsVersion, req.ip, driverCommissionRate, req.user.driverId],
+  );
+  if (!result.rows[0]) return res.status(404).json({ message: 'Motorista nao encontrado.' });
+  res.json({ driver: mapDriver(result.rows[0]) });
 });
 
 app.patch('/api/drivers/:id/status', authenticate, requireAdmin, async (req, res) => {

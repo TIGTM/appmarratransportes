@@ -42,7 +42,8 @@ type View =
   | 'adminDrivers'
   | 'adminDeliveries'
   | 'privacy'
-  | 'terms';
+  | 'terms'
+  | 'termsAcceptance';
 
 type Driver = {
   id: string;
@@ -52,9 +53,14 @@ type Driver = {
   email: string;
   password: string;
   plate: string;
+  cnhCategory?: 'C' | 'D' | 'E' | '';
   cnhFileName?: string;
   cnhFileUrl?: string;
   cnhFileData?: string;
+  acceptedTerms?: boolean;
+  commissionRate?: number;
+  termsAcceptedAt?: string;
+  termsVersion?: string;
   status: DriverStatus;
 };
 
@@ -90,6 +96,8 @@ type Delivery = {
 type Toast = { id: string; type: 'success' | 'error'; message: string };
 
 const TOKEN_KEY = 'marra:token';
+const TERMS_VERSION = '2026-06-28';
+const DRIVER_COMMISSION_RATE = 16;
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -127,6 +135,7 @@ const blankDriver: Driver = {
   email: '',
   password: '',
   plate: '',
+  cnhCategory: '',
   status: 'Pendente',
 };
 
@@ -180,7 +189,7 @@ function App() {
         const me = await apiRequest<{ session: { role: 'driver' | 'admin'; driverId?: string }; driver?: Driver }>('/api/me');
         setSession(me.session);
         await loadData();
-        setView(me.session.role === 'admin' ? 'adminDashboard' : 'driverDashboard');
+        setView(me.session.role === 'admin' ? 'adminDashboard' : me.driver?.termsAcceptedAt ? 'driverDashboard' : 'termsAcceptance');
       } catch {
         localStorage.removeItem(TOKEN_KEY);
         setSession(null);
@@ -260,7 +269,7 @@ function App() {
       localStorage.setItem(TOKEN_KEY, result.token);
       setSession(result.session);
       await loadData();
-      setView('driverDashboard');
+      setView(result.driver.termsAcceptedAt ? 'driverDashboard' : 'termsAcceptance');
       toast('success', `Bem-vindo, ${result.driver.name.split(' ')[0]}.`);
     } catch (error) {
       toast('error', error instanceof Error ? error.message : 'E-mail ou senha invalidos.');
@@ -299,6 +308,17 @@ function App() {
     toast('success', 'Conta e dados pessoais removidos.');
   };
 
+  const acceptDriverTerms = async () => {
+    try {
+      const result = await apiRequest<{ driver: Driver }>('/api/drivers/terms/accept', { method: 'POST' });
+      setDrivers((items) => items.map((driver) => (driver.id === result.driver.id ? result.driver : driver)));
+      toast('success', 'Termos aceitos e arquivados com sucesso.');
+      setView('driverDashboard');
+    } catch (error) {
+      toast('error', error instanceof Error ? error.message : 'Nao foi possivel registrar o aceite.');
+    }
+  };
+
   const openDelivery = (id: string, target: View = 'deliveryDetails') => {
     setSelectedDeliveryId(id);
     setView(target);
@@ -330,7 +350,13 @@ function App() {
       {view === 'adminLogin' && <AdminLoginScreen onLogin={loginAdmin} onBack={() => setView('login')} />}
 
       {session?.role === 'driver' && currentDriver && (
-        <DriverShell driver={currentDriver} view={view} setView={setView} logout={logout}>
+        <DriverShell
+          driver={currentDriver}
+          view={view}
+          setView={(nextView) => setView(currentDriver.termsAcceptedAt ? nextView : 'termsAcceptance')}
+          logout={logout}
+        >
+          {view === 'termsAcceptance' && <TermsAcceptanceScreen driver={currentDriver} onAccept={acceptDriverTerms} />}
           {view === 'driverDashboard' && (
             <DriverDashboard
               driver={currentDriver}
@@ -579,7 +605,7 @@ function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (drive
         onSubmit={async (event) => {
           event.preventDefault();
           if (!accepted) return;
-          await onSave({ ...driver, cnhFileName, cnhFileData });
+          await onSave({ ...driver, cnhFileName, cnhFileData, acceptedTerms: accepted, commissionRate: DRIVER_COMMISSION_RATE });
         }}
         className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-7 shadow-soft"
       >
@@ -599,6 +625,17 @@ function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (drive
           <Field label="E-mail" value={driver.email} onChange={(value) => update('email', value)} type="email" required />
           <Field label="Senha" value={driver.password} onChange={(value) => update('password', value)} type="password" required />
           <Field label="Placa do veiculo" value={driver.plate} onChange={(value) => update('plate', value.toUpperCase())} required />
+          <SelectField
+            label="Categoria da CNH"
+            value={driver.cnhCategory || ''}
+            onChange={(value) => update('cnhCategory', value)}
+            options={[
+              { label: 'Selecione', value: '' },
+              { label: 'Categoria C', value: 'C' },
+              { label: 'Categoria D', value: 'D' },
+              { label: 'Categoria E', value: 'E' },
+            ]}
+          />
         </div>
         <label className="mt-4 flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-marra-secondary bg-sky-50 px-4 py-4 text-sm font-bold text-marra-primary">
           <span>{cnhFileName || 'Anexar CNH'}</span>
@@ -613,14 +650,61 @@ function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (drive
         <label className="mt-4 flex items-start gap-3 rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-600">
           <input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1 h-4 w-4" required />
           <span>
-            Li e aceito o uso dos meus dados para cadastro, comprovacao de entregas, seguranca operacional e cumprimento de obrigacoes legais.
+            Li e aceito os Termos de Uso: atuo como parceiro independente, sem vinculo empregaticio, seguirei conduta etica, cuidado com o veiculo e ciencia de que a comissao operacional e de {DRIVER_COMMISSION_RATE}% do frete.
           </span>
         </label>
-        <button className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-marra-primary px-5 py-3 font-bold text-white">
+        <button disabled={!accepted} className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-marra-primary px-5 py-3 font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
           <Save size={18} /> Salvar cadastro
         </button>
       </form>
     </LoginFrame>
+  );
+}
+
+function TermsAcceptanceScreen({ driver, onAccept }: { driver: Driver; onAccept: () => Promise<void> }) {
+  const [accepted, setAccepted] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <SectionHeader title="Termos operacionais" subtitle="Aceite obrigatorio para continuar usando a plataforma." />
+      <Panel title="Termo de parceiro independente">
+        <div className="space-y-4 text-sm leading-7 text-slate-700">
+          <p>
+            Eu, {driver.name}, declaro que atuo como parceiro independente da Marra Transportes, sem vinculo empregaticio,
+            usando a plataforma para registrar entregas e comprovantes operacionais.
+          </p>
+          <p>
+            Comprometo-me a manter conduta etica, registrar informacoes verdadeiras, preservar o veiculo utilizado,
+            respeitar clientes atendidos e anexar somente fotos, assinaturas e dados relacionados ao servico realizado.
+          </p>
+          <p>
+            Declaro ciencia de que para atuar e necessario possuir CNH categoria C, D ou E valida, e que a remuneracao
+            por comissao corresponde a {DRIVER_COMMISSION_RATE}% do valor do frete, conforme politica operacional vigente.
+          </p>
+          <p className="rounded-lg bg-sky-50 p-4 font-bold text-marra-primary">
+            Versao do termo: {TERMS_VERSION}. O aceite sera arquivado com data, hora e identificacao tecnica do acesso.
+          </p>
+        </div>
+
+        <label className="mt-5 flex items-start gap-3 rounded-lg bg-slate-50 p-4 text-sm font-bold text-slate-700">
+          <input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1 h-4 w-4" />
+          <span>Li, compreendi e aceito os termos operacionais acima.</span>
+        </label>
+
+        <button
+          disabled={!accepted || saving}
+          onClick={async () => {
+            setSaving(true);
+            await onAccept();
+            setSaving(false);
+          }}
+          className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-marra-primary px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          <ShieldCheck size={18} /> {saving ? 'Registrando aceite...' : 'Aceitar e continuar'}
+        </button>
+      </Panel>
+    </div>
   );
 }
 
@@ -1377,7 +1461,9 @@ function DriversManager({
                     <StatusPill status={driver.status} />
                   </div>
                   <p className="mt-1 text-sm text-slate-500">{driver.email} - {driver.phone} - Placa {driver.plate}</p>
-                  <p className="mt-1 text-sm text-slate-500">CNH: {driver.cnhFileName ?? 'nao enviada'}</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    CNH: {driver.cnhFileName ?? 'nao enviada'} {driver.cnhCategory ? `- Categoria ${driver.cnhCategory}` : ''}
+                  </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -1401,7 +1487,15 @@ function DriversManager({
                       ['Telefone', driver.phone],
                       ['E-mail', driver.email],
                       ['Placa do veiculo', driver.plate],
+                      ['Categoria CNH', driver.cnhCategory ? `Categoria ${driver.cnhCategory}` : 'nao informada'],
                       ['CNH', driver.cnhFileName ?? 'nao enviada'],
+                      ['Comissao', `${driver.commissionRate ?? DRIVER_COMMISSION_RATE}% do frete`],
+                      [
+                        'Aceite dos termos',
+                        driver.termsAcceptedAt
+                          ? `${formatDate(driver.termsAcceptedAt.slice(0, 10))} - versao ${driver.termsVersion || TERMS_VERSION}`
+                          : 'pendente',
+                      ],
                       ['Status', driver.status],
                     ]}
                   />
@@ -1485,7 +1579,15 @@ function AccountScreen({ driver, onDeleteAccount, toast }: { driver: Driver; onD
             ['Telefone', driver.phone],
             ['E-mail', driver.email],
             ['Placa do veiculo', driver.plate],
+            ['Categoria CNH', driver.cnhCategory ? `Categoria ${driver.cnhCategory}` : '-'],
             ['CNH', driver.cnhFileName ?? '-'],
+            ['Comissao', `${driver.commissionRate ?? DRIVER_COMMISSION_RATE}% do frete`],
+            [
+              'Aceite dos termos',
+              driver.termsAcceptedAt
+                ? `${formatDate(driver.termsAcceptedAt.slice(0, 10))} - versao ${driver.termsVersion || TERMS_VERSION}`
+                : 'pendente',
+            ],
             ['Status', driver.status],
           ]}
         />
@@ -1534,6 +1636,9 @@ function LegalScreen({ type, onBack }: { type: 'privacy' | 'terms'; onBack: () =
         ) : (
           <div className="mt-6 space-y-4 text-sm leading-7 text-slate-700">
             <p>O aplicativo deve ser usado por motoristas e administradores autorizados pela Marra Transportes para registrar entregas reais.</p>
+            <p>O motorista atua como parceiro independente, sem vinculo empregaticio com a Marra Transportes, usando a plataforma para registrar a execucao dos servicos.</p>
+            <p>Para operar, o motorista deve possuir CNH valida categoria C, D ou E. A comissao operacional informada e de {DRIVER_COMMISSION_RATE}% do valor do frete.</p>
+            <p>O usuario deve manter conduta etica, zelar pelo veiculo utilizado, tratar clientes com respeito e seguir orientacoes operacionais aplicaveis.</p>
             <p>O usuario e responsavel por enviar informacoes verdadeiras, imagens relacionadas ao servico executado e assinatura obtida no ato da entrega.</p>
             <p>E proibido usar o aplicativo para registrar entregas inexistentes, dados de terceiros sem autorizacao ou conteudo inadequado.</p>
             <p>A empresa pode bloquear contas em caso de uso indevido, risco operacional ou encerramento do vinculo com o motorista.</p>

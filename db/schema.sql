@@ -6,13 +6,23 @@ CREATE TABLE IF NOT EXISTS drivers (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   plate TEXT NOT NULL,
+  cnh_category TEXT,
   cnh_file_name TEXT,
   cnh_file_url TEXT,
+  commission_rate NUMERIC NOT NULL DEFAULT 16,
+  terms_accepted_at TIMESTAMPTZ,
+  terms_version TEXT,
+  terms_ip TEXT,
   status TEXT NOT NULL DEFAULT 'Pendente',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE drivers ADD COLUMN IF NOT EXISTS cnh_file_url TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS cnh_category TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS commission_rate NUMERIC NOT NULL DEFAULT 16;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS terms_version TEXT;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS terms_ip TEXT;
 
 CREATE TABLE IF NOT EXISTS clients (
   id TEXT PRIMARY KEY,
