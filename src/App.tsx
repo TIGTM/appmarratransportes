@@ -562,7 +562,7 @@ function RegisterScreen({ onBack, onSave }: { onBack: () => void; onSave: (drive
           <Field label="Placa do veiculo" value={driver.plate} onChange={(value) => update('plate', value.toUpperCase())} required />
         </div>
         <label className="mt-4 flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-marra-secondary bg-sky-50 px-4 py-4 text-sm font-bold text-marra-primary">
-          <span>{cnhFileName || 'Upload fake de CNH'}</span>
+          <span>{cnhFileName || 'Anexar CNH'}</span>
           <input
             type="file"
             className="hidden"
