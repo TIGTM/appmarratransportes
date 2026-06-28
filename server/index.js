@@ -281,6 +281,12 @@ app.post('/api/deliveries', authenticate, async (req, res) => {
   if (!clientId || !documentType || !address || !plate) {
     return res.status(400).json({ message: 'Dados obrigatorios da entrega incompletos.' });
   }
+  if (!nfPhoto || !deliveryPhoto || !signature) {
+    return res.status(400).json({ message: 'Foto da nota fiscal, foto da entrega e assinatura sao obrigatorias.' });
+  }
+  if (latitude === undefined || longitude === undefined || latitude === null || longitude === null) {
+    return res.status(400).json({ message: 'Localizacao GPS obrigatoria.' });
+  }
 
   const id = `delivery-${crypto.randomUUID()}`;
   const protocol = await nextProtocol();
@@ -289,6 +295,9 @@ app.post('/api/deliveries', authenticate, async (req, res) => {
     saveDataUrl(deliveryPhoto, 'entrega'),
     saveDataUrl(signature, 'assinatura'),
   ]);
+  if (!nfPhotoUrl || !deliveryPhotoUrl || !signatureUrl) {
+    return res.status(400).json({ message: 'Arquivos da entrega invalidos. Envie imagens e assinatura novamente.' });
+  }
 
   const result = await pool.query(
     `INSERT INTO deliveries

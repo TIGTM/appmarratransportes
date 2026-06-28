@@ -355,7 +355,7 @@ function App() {
         <AdminShell view={view} setView={setView} logout={logout}>
           {view === 'adminDashboard' && <AdminDashboard drivers={drivers} clients={clients} deliveries={deliveries} />}
           {view === 'adminClients' && <ClientsManager clients={clients} saveClients={saveClients} toast={toast} />}
-          {view === 'adminDrivers' && <DriversManager drivers={drivers} saveDrivers={saveDrivers} />}
+          {view === 'adminDrivers' && <DriversManager drivers={drivers} saveDrivers={saveDrivers} toast={toast} />}
           {view === 'adminDeliveries' && (
             <AdminDeliveries
               deliveries={deliveries}
@@ -807,6 +807,7 @@ function NewDeliveryScreen({
   const [signature, setSignature] = useState('');
   const [coords, setCoords] = useState<{ latitude?: number; longitude?: number }>({});
   const [loadingGps, setLoadingGps] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (selectedClient) setAddress(selectedClient.address);
@@ -835,12 +836,21 @@ function NewDeliveryScreen({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (saving) return;
     if (!clientId) {
       toast('error', 'Selecione um cliente.');
       return;
     }
-    if (!nfPhoto || !deliveryPhoto || !signature) {
-      toast('error', 'Inclua foto da NF, foto da entrega e assinatura.');
+    if (!nfPhoto) {
+      toast('error', 'Inclua a foto da nota fiscal antes de finalizar.');
+      return;
+    }
+    if (!deliveryPhoto) {
+      toast('error', 'Inclua a foto da entrega antes de finalizar.');
+      return;
+    }
+    if (!signature) {
+      toast('error', 'Inclua a assinatura antes de finalizar.');
       return;
     }
     if (coords.latitude === undefined || coords.longitude === undefined) {
@@ -848,24 +858,29 @@ function NewDeliveryScreen({
       return;
     }
     const now = new Date();
-    await onSave({
-      id: newId('delivery'),
-      protocol: protocolFor(deliveryCount + 1),
-      driverId: driver.id,
-      clientId,
-      documentType,
-      address,
-      plate,
-      notes,
-      nfPhoto,
-      deliveryPhoto,
-      signature,
-      latitude: coords.latitude,
-      longitude: coords.longitude,
-      date: now.toISOString().slice(0, 10),
-      time: now.toTimeString().slice(0, 5),
-      status: 'Concluida',
-    });
+    setSaving(true);
+    try {
+      await onSave({
+        id: newId('delivery'),
+        protocol: protocolFor(deliveryCount + 1),
+        driverId: driver.id,
+        clientId,
+        documentType,
+        address,
+        plate,
+        notes,
+        nfPhoto,
+        deliveryPhoto,
+        signature,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        date: now.toISOString().slice(0, 10),
+        time: now.toTimeString().slice(0, 5),
+        status: 'Concluida',
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -907,8 +922,8 @@ function NewDeliveryScreen({
             </div>
           </div>
           <div className="grid gap-3">
-            <button className="flex items-center justify-center gap-2 rounded-lg bg-marra-primary px-5 py-3 font-black text-white">
-              <CheckCircle2 size={18} /> Finalizar entrega
+            <button disabled={saving} className="flex items-center justify-center gap-2 rounded-lg bg-marra-primary px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:opacity-60">
+              <CheckCircle2 size={18} /> {saving ? 'Registrando entrega...' : 'Finalizar entrega'}
             </button>
             <button type="button" onClick={onCancel} className="rounded-lg border border-slate-200 bg-white px-5 py-3 font-bold text-slate-600">
               Cancelar
@@ -1166,31 +1181,79 @@ function ClientsManager({ clients, saveClients, toast }: { clients: Client[]; sa
   );
 }
 
-function DriversManager({ drivers, saveDrivers }: { drivers: Driver[]; saveDrivers: (drivers: Driver[]) => Promise<void> }) {
-  const setStatus = async (id: string, status: DriverStatus) => saveDrivers(drivers.map((driver) => (driver.id === id ? { ...driver, status } : driver)));
+function DriversManager({
+  drivers,
+  saveDrivers,
+  toast,
+}: {
+  drivers: Driver[];
+  saveDrivers: (drivers: Driver[]) => Promise<void>;
+  toast: (type: Toast['type'], message: string) => void;
+}) {
+  const [openDriverId, setOpenDriverId] = useState<string | null>(null);
+  const [updatingDriverId, setUpdatingDriverId] = useState<string | null>(null);
+
+  const setStatus = async (driver: Driver, status: DriverStatus) => {
+    setUpdatingDriverId(driver.id);
+    try {
+      await saveDrivers(drivers.map((item) => (item.id === driver.id ? { ...item, status } : item)));
+      toast('success', `${driver.name} agora esta ${status.toLowerCase()}.`);
+    } catch (error) {
+      toast('error', error instanceof Error ? error.message : 'Nao foi possivel atualizar o motorista.');
+    } finally {
+      setUpdatingDriverId(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <SectionHeader title="Gestao de Motoristas" subtitle="Aprovacao e bloqueio com persistencia real no banco de dados." />
       <div className="grid gap-4">
-        {drivers.map((driver) => (
-          <div key={driver.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h3 className="text-lg font-black text-slate-900">{driver.name}</h3>
-                  <StatusPill status={driver.status} />
+        {drivers.map((driver) => {
+          const isOpen = openDriverId === driver.id;
+          const updating = updatingDriverId === driver.id;
+          return (
+            <div key={driver.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+                <div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h3 className="text-lg font-black text-slate-900">{driver.name}</h3>
+                    <StatusPill status={driver.status} />
+                  </div>
+                  <p className="mt-1 text-sm text-slate-500">{driver.email} - {driver.phone} - Placa {driver.plate}</p>
+                  <p className="mt-1 text-sm text-slate-500">CNH: {driver.cnhFileName ?? 'nao enviada'}</p>
                 </div>
-                <p className="mt-1 text-sm text-slate-500">{driver.email} - {driver.phone} - Placa {driver.plate}</p>
-                <p className="mt-1 text-sm text-slate-500">CNH: {driver.cnhFileName ?? 'nao enviada'}</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOpenDriverId(isOpen ? null : driver.id)}
+                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-black text-slate-700"
+                  >
+                    {isOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
+                  </button>
+                  <StatusButton label="Aprovar" disabled={updating} onClick={() => setStatus(driver, 'Aprovado')} />
+                  <StatusButton label="Reprovar" disabled={updating} onClick={() => setStatus(driver, 'Reprovado')} />
+                  <StatusButton label="Bloquear" disabled={updating} onClick={() => setStatus(driver, 'Bloqueado')} danger />
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <StatusButton label="Aprovar" onClick={() => setStatus(driver.id, 'Aprovado')} />
-                <StatusButton label="Reprovar" onClick={() => setStatus(driver.id, 'Reprovado')} />
-                <StatusButton label="Bloquear" onClick={() => setStatus(driver.id, 'Bloqueado')} danger />
-              </div>
+              {isOpen && (
+                <div className="mt-5 border-t border-slate-100 pt-5">
+                  <InfoGrid
+                    items={[
+                      ['Nome', driver.name],
+                      ['CPF', driver.cpf],
+                      ['Telefone', driver.phone],
+                      ['E-mail', driver.email],
+                      ['Placa do veiculo', driver.plate],
+                      ['CNH', driver.cnhFileName ?? 'nao enviada'],
+                      ['Status', driver.status],
+                    ]}
+                  />
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1512,11 +1575,13 @@ function StatusPill({ status }: { status: DriverStatus }) {
   return <span className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-black ${styles[status]}`}>{status}</span>;
 }
 
-function StatusButton({ label, onClick, danger = false }: { label: string; onClick: () => void; danger?: boolean }) {
+function StatusButton({ label, onClick, danger = false, disabled = false }: { label: string; onClick: () => void; danger?: boolean; disabled?: boolean }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`rounded-lg px-4 py-2 text-sm font-black ${danger ? 'bg-red-50 text-red-700' : 'bg-sky-50 text-marra-primary'}`}
+      disabled={disabled}
+      className={`rounded-lg px-4 py-2 text-sm font-black disabled:cursor-not-allowed disabled:opacity-60 ${danger ? 'bg-red-50 text-red-700' : 'bg-sky-50 text-marra-primary'}`}
     >
       {label}
     </button>
