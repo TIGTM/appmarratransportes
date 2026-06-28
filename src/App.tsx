@@ -394,11 +394,11 @@ function ToastStack({ toasts }: { toasts: Toast[] }) {
 
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="flex items-center">
+    <div className={`${compact ? 'h-12 w-28' : 'h-16 w-36'} flex items-center justify-center rounded-md bg-white px-2 py-1 shadow-sm`}>
       <img
-        src="/marra-logo-display-white.png"
+        src="/marra-logo-tight.png"
         alt="Marra Transportes"
-        className={`${compact ? 'h-14' : 'h-20'} w-auto rounded-sm object-contain`}
+        className="max-h-full max-w-full object-contain"
       />
     </div>
   );
@@ -409,24 +409,28 @@ function LoginFrame({ children }: { children: React.ReactNode }) {
     <main className="grid min-h-screen grid-cols-1 bg-white lg:grid-cols-[1fr_520px]">
       <section className="relative hidden overflow-hidden bg-marra-primary lg:block">
         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(0,174,239,0.3),transparent_45%),radial-gradient(circle_at_70%_20%,rgba(255,255,255,0.16),transparent_30%)]" />
-        <div className="relative flex h-full flex-col justify-between p-12 text-white">
-          <BrandMark />
-          <div className="max-w-xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm font-semibold">
-              <ShieldCheck size={17} /> Operacao digital
-            </div>
-            <h1 className="text-5xl font-black leading-tight tracking-normal">Comprovacao de entregas em tempo real.</h1>
-            <p className="mt-5 text-lg leading-8 text-sky-50">
-              Registro de motorista, cliente, fotos, assinatura, horario e localizacao em uma jornada simples para comprovacao operacional.
-            </p>
+        <div className="relative flex h-full flex-col">
+          <div className="flex h-24 items-center bg-white px-12">
+            <BrandMark />
           </div>
-          <div className="grid grid-cols-3 gap-4">
-            {['GPS', 'Fotos', 'PDF'].map((item) => (
-              <div key={item} className="rounded-lg border border-white/15 bg-white/10 p-4">
-                <div className="text-2xl font-black">{item}</div>
-                <div className="mt-1 text-sm text-sky-100">validacao visual</div>
+          <div className="flex flex-1 flex-col justify-between p-12 text-white">
+            <div className="max-w-xl">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm font-semibold">
+                <ShieldCheck size={17} /> Operacao digital
               </div>
-            ))}
+              <h1 className="text-5xl font-black leading-tight tracking-normal">Comprovacao de entregas em tempo real.</h1>
+              <p className="mt-5 text-lg leading-8 text-sky-50">
+                Registro de motorista, cliente, fotos, assinatura, horario e localizacao em uma jornada simples para comprovacao operacional.
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              {['GPS', 'Fotos', 'PDF'].map((item) => (
+                <div key={item} className="rounded-lg border border-white/15 bg-white/10 p-4">
+                  <div className="text-2xl font-black">{item}</div>
+                  <div className="mt-1 text-sm text-sky-100">validacao visual</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -464,7 +468,7 @@ function LoginScreen({
   return (
     <LoginFrame>
       <form onSubmit={submit} className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-7 shadow-soft">
-        <div className="mb-7 rounded-lg bg-marra-primary p-5">
+        <div className="mb-7 flex justify-center rounded-lg border border-slate-200 bg-white p-4">
           <BrandMark />
         </div>
         <h2 className="text-2xl font-black text-slate-900">Acesso do motorista</h2>
