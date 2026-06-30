@@ -9,6 +9,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import nodemailer from 'nodemailer';
+import PDFDocument from 'pdfkit';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -23,6 +25,10 @@ const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
 const currentTermsVersion = '2026-06-28';
 const driverCommissionRate = 16;
 const validCnhCategories = ['C', 'D', 'E'];
+const marraNotificationEmails = (process.env.MARRA_NOTIFICATION_EMAILS || process.env.MARRA_EMAIL || '')
+  .split(/[;,]/)
+  .map((email) => email.trim())
+  .filter(Boolean);
 
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL nao configurado. Copie .env.example para .env e ajuste o PostgreSQL.');
@@ -196,10 +202,146 @@ function mapDelivery(row) {
     latitude: row.latitude === null ? undefined : Number(row.latitude),
     longitude: row.longitude === null ? undefined : Number(row.longitude),
     locationLabel: row.location_label || '',
+    emailStatus: row.email_status || 'Pendente',
+    emailSentAt: row.email_sent_at ? new Date(row.email_sent_at).toISOString() : '',
+    emailRecipients: row.email_recipients || '',
+    emailError: row.email_error || '',
     date: deliveredAt.toISOString().slice(0, 10),
     time: deliveredAt.toTimeString().slice(0, 5),
     status: row.status,
   };
+}
+
+function smtpConfigured() {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && (process.env.SMTP_FROM || process.env.SMTP_USER));
+}
+
+function createTransporter() {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true',
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
+
+function splitEmails(value = '') {
+  return String(value)
+    .split(/[;,]/)
+    .map((email) => email.trim())
+    .filter(Boolean);
+}
+
+function uniqueEmails(items) {
+  return [...new Set(items.map((email) => email.trim().toLowerCase()).filter(Boolean))];
+}
+
+function uploadPathFromUrl(url) {
+  if (!url || !url.startsWith('/uploads/')) return '';
+  return path.join(uploadsDir, path.basename(url));
+}
+
+function formatDateBr(date) {
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(date);
+}
+
+function formatTimeBr(date) {
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+function generateDeliveryReceiptPdf({ delivery, driver, client }) {
+  return new Promise((resolve, reject) => {
+    const deliveredAt = new Date(delivery.delivered_at);
+    const pdf = new PDFDocument({ size: 'A4', margin: 42, bufferPages: true });
+    const chunks = [];
+    pdf.on('data', (chunk) => chunks.push(chunk));
+    pdf.on('error', reject);
+    pdf.on('end', () => resolve(Buffer.concat(chunks)));
+
+    const primary = '#005A9C';
+    const muted = '#64748B';
+    const pageWidth = pdf.page.width;
+    const contentWidth = pageWidth - 84;
+
+    const addHeader = (title) => {
+      pdf.rect(0, 0, pageWidth, 82).fill(primary);
+      const logoPath = path.join(rootDir, 'public', 'marra-logo-tight.png');
+      pdf.roundedRect(42, 18, 92, 42, 4).fill('#FFFFFF');
+      try {
+        pdf.image(logoPath, 49, 23, { fit: [78, 32], align: 'center', valign: 'center' });
+      } catch {
+        pdf.fillColor(primary).fontSize(9).font('Helvetica-Bold').text('MARRA TRANSPORTES', 52, 34);
+      }
+      pdf.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(17).text(title, 154, 24);
+      pdf.font('Helvetica').fontSize(9).text('Documento gerado automaticamente pelo sistema Marra Transportes', 154, 48);
+      pdf.moveDown();
+    };
+
+    const field = (label, value, x, y, width) => {
+      pdf.roundedRect(x, y, width, 42, 4).fill('#F8FAFC').stroke('#E2E8F0');
+      pdf.fillColor(muted).font('Helvetica-Bold').fontSize(7).text(label.toUpperCase(), x + 10, y + 9, { width: width - 20 });
+      pdf.fillColor('#0F172A').font('Helvetica-Bold').fontSize(10).text(value || '-', x + 10, y + 22, { width: width - 20 });
+    };
+
+    addHeader('COMPROVANTE DE ENTREGA');
+    pdf.y = 104;
+    pdf.roundedRect(42, pdf.y, contentWidth, 50, 4).fill('#EFF6FF').stroke(primary);
+    pdf.fillColor(primary).font('Helvetica-Bold').fontSize(8).text('PROTOCOLO', 54, pdf.y + 11);
+    pdf.fillColor('#0F172A').font('Helvetica-Bold').fontSize(18).text(delivery.protocol, 54, pdf.y + 25);
+    pdf.y += 70;
+
+    const col = (contentWidth - 12) / 2;
+    let y = pdf.y;
+    field('Motorista', driver.name, 42, y, col);
+    field('Cliente', client.company_name, 54 + col, y, col);
+    y += 52;
+    field('Documento', delivery.document_type, 42, y, col);
+    field('Placa', delivery.plate, 54 + col, y, col);
+    y += 52;
+    field('Data', formatDateBr(deliveredAt), 42, y, col);
+    field('Hora', formatTimeBr(deliveredAt), 54 + col, y, col);
+    y += 60;
+
+    pdf.fillColor(primary).font('Helvetica-Bold').fontSize(9).text('ENDERECO', 42, y);
+    pdf.fillColor('#0F172A').font('Helvetica').fontSize(10).text(delivery.address, 42, y + 14, { width: contentWidth });
+    y = pdf.y + 12;
+    pdf.fillColor(primary).font('Helvetica-Bold').fontSize(9).text('LOCALIZACAO', 42, y);
+    pdf.fillColor('#0F172A').font('Helvetica').fontSize(10).text(delivery.location_label || '-', 42, y + 14, { width: contentWidth });
+    pdf.fillColor(muted).fontSize(8).text(`GPS: ${delivery.latitude || '-'}, ${delivery.longitude || '-'}`, 42, pdf.y + 4, { width: contentWidth });
+    y = pdf.y + 14;
+    pdf.fillColor(primary).font('Helvetica-Bold').fontSize(9).text('OBSERVACOES', 42, y);
+    pdf.fillColor('#0F172A').font('Helvetica').fontSize(10).text(delivery.notes || '-', 42, y + 14, { width: contentWidth });
+
+    pdf.addPage();
+    addHeader('EVIDENCIAS DA ENTREGA');
+    pdf.y = 104;
+    const imageBox = (label, url, height) => {
+      const top = pdf.y;
+      pdf.roundedRect(42, top, contentWidth, height, 4).stroke('#CBD5E1');
+      pdf.fillColor(primary).font('Helvetica-Bold').fontSize(9).text(label, 54, top + 10);
+      const filePath = uploadPathFromUrl(url);
+      try {
+        if (filePath) pdf.image(filePath, 54, top + 26, { fit: [contentWidth - 24, height - 36], align: 'center', valign: 'center' });
+      } catch {
+        pdf.fillColor(muted).fontSize(9).text('Imagem indisponivel no arquivo.', 54, top + 32);
+      }
+      pdf.y = top + height + 14;
+    };
+    imageBox('Foto da NF', delivery.nf_photo_url, 138);
+    imageBox('Foto da entrega', delivery.delivery_photo_url, 138);
+    imageBox('Assinatura', delivery.signature_url, 86);
+
+    const pages = pdf.bufferedPageRange();
+    for (let i = 0; i < pages.count; i += 1) {
+      pdf.switchToPage(i);
+      pdf.fillColor(muted).font('Helvetica').fontSize(8).text(`Pagina ${i + 1} de ${pages.count}`, 42, pdf.page.height - 34, { align: 'right' });
+    }
+
+    pdf.end();
+  });
 }
 
 async function saveDataUrl(dataUrl, prefix) {
@@ -227,6 +369,97 @@ async function nextProtocol() {
   const ymd = date.toISOString().slice(0, 10).replaceAll('-', '');
   const result = await pool.query("SELECT COUNT(*)::int AS count FROM deliveries WHERE protocol LIKE $1", [`MT-${ymd}-%`]);
   return `MT-${ymd}-${String(result.rows[0].count + 1).padStart(6, '0')}`;
+}
+
+async function getDeliveryContext(deliveryId) {
+  const result = await pool.query(
+    `SELECT d.*, dr.name AS driver_name, dr.email AS driver_email, c.company_name, c.email AS client_email, c.extra_emails
+     FROM deliveries d
+     JOIN drivers dr ON dr.id = d.driver_id
+     JOIN clients c ON c.id = d.client_id
+     WHERE d.id = $1`,
+    [deliveryId],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    delivery: row,
+    driver: { name: row.driver_name, email: row.driver_email },
+    client: { company_name: row.company_name, email: row.client_email, extra_emails: row.extra_emails || '' },
+  };
+}
+
+async function updateDeliveryEmailStatus(deliveryId, status, recipients = [], error = '') {
+  const result = await pool.query(
+    `UPDATE deliveries
+     SET email_status = $1,
+         email_sent_at = CASE WHEN $1 = 'Enviado' THEN NOW() ELSE email_sent_at END,
+         email_recipients = $2,
+         email_error = $3
+     WHERE id = $4
+     RETURNING *`,
+    [status, recipients.join(', '), error ? String(error).slice(0, 700) : '', deliveryId],
+  );
+  return result.rows[0] ? mapDelivery(result.rows[0]) : null;
+}
+
+async function sendDeliveryReceiptEmail(deliveryId) {
+  const context = await getDeliveryContext(deliveryId);
+  if (!context) throw new Error('Entrega nao encontrada para envio de e-mail.');
+
+  const recipients = uniqueEmails([
+    context.driver.email,
+    ...marraNotificationEmails,
+    context.client.email,
+    ...splitEmails(context.client.extra_emails),
+  ]);
+
+  if (recipients.length === 0) {
+    return updateDeliveryEmailStatus(deliveryId, 'Sem destinatario', [], 'Nenhum destinatario configurado.');
+  }
+
+  if (!smtpConfigured()) {
+    return updateDeliveryEmailStatus(deliveryId, 'SMTP nao configurado', recipients, 'Configure SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM e MARRA_NOTIFICATION_EMAILS no .env.');
+  }
+
+  try {
+    const pdf = await generateDeliveryReceiptPdf(context);
+    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from,
+      to: recipients,
+      subject: `Comprovante de entrega ${context.delivery.protocol} - Marra Transportes`,
+      text: [
+        `Segue em anexo o comprovante de entrega ${context.delivery.protocol}.`,
+        '',
+        `Motorista: ${context.driver.name}`,
+        `Cliente: ${context.client.company_name}`,
+        `Documento: ${context.delivery.document_type}`,
+        `Endereco: ${context.delivery.address}`,
+        '',
+        'Mensagem automatica do sistema Marra Transportes.',
+      ].join('\n'),
+      html: `
+        <p>Segue em anexo o comprovante de entrega <strong>${context.delivery.protocol}</strong>.</p>
+        <p><strong>Motorista:</strong> ${context.driver.name}<br/>
+        <strong>Cliente:</strong> ${context.client.company_name}<br/>
+        <strong>Documento:</strong> ${context.delivery.document_type}<br/>
+        <strong>Endereco:</strong> ${context.delivery.address}</p>
+        <p>Mensagem automatica do sistema Marra Transportes.</p>
+      `,
+      attachments: [
+        {
+          filename: `${context.delivery.protocol}.pdf`,
+          content: pdf,
+          contentType: 'application/pdf',
+        },
+      ],
+    });
+    return updateDeliveryEmailStatus(deliveryId, 'Enviado', recipients, '');
+  } catch (error) {
+    return updateDeliveryEmailStatus(deliveryId, 'Falhou', recipients, error.message || 'Falha ao enviar e-mail.');
+  }
 }
 
 app.get('/api/health', (_req, res) => {
@@ -450,7 +683,19 @@ app.post('/api/deliveries', authenticate, async (req, res) => {
      RETURNING *`,
     [id, protocol, req.user.driverId, clientId, documentType, address, plate, notes || '', nfPhotoUrl, deliveryPhotoUrl, signatureUrl, latitude || null, longitude || null, locationLabel || ''],
   );
-  res.status(201).json({ delivery: mapDelivery(result.rows[0]) });
+  const emailedDelivery = await sendDeliveryReceiptEmail(result.rows[0].id);
+  res.status(201).json({ delivery: emailedDelivery || mapDelivery(result.rows[0]) });
+});
+
+app.post('/api/deliveries/:id/send-email', authenticate, async (req, res) => {
+  const deliveryResult = await pool.query('SELECT * FROM deliveries WHERE id = $1', [req.params.id]);
+  const delivery = deliveryResult.rows[0];
+  if (!delivery) return res.status(404).json({ message: 'Entrega nao encontrada.' });
+  if (req.user.role !== 'admin' && delivery.driver_id !== req.user.driverId) {
+    return res.status(403).json({ message: 'Acesso a entrega nao autorizado.' });
+  }
+  const emailedDelivery = await sendDeliveryReceiptEmail(delivery.id);
+  res.json({ delivery: emailedDelivery || mapDelivery(delivery) });
 });
 
 app.use('/api', (err, _req, res, _next) => {

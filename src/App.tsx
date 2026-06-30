@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Lock,
   LogOut,
+  Mail,
   MapPin,
   Menu,
   Plus,
@@ -88,6 +89,10 @@ type Delivery = {
   latitude?: number;
   longitude?: number;
   locationLabel?: string;
+  emailStatus?: string;
+  emailSentAt?: string;
+  emailRecipients?: string;
+  emailError?: string;
   date: string;
   time: string;
   status: 'Concluida';
@@ -344,6 +349,13 @@ function App() {
     setView(target);
   };
 
+  const resendDeliveryEmail = async (id: string) => {
+    const result = await apiRequest<{ delivery: Delivery }>(`/api/deliveries/${id}/send-email`, { method: 'POST' });
+    setDeliveries((items) => items.map((delivery) => (delivery.id === result.delivery.id ? result.delivery : delivery)));
+    const sent = result.delivery.emailStatus === 'Enviado';
+    toast(sent ? 'success' : 'error', sent ? 'Comprovante enviado por e-mail.' : result.delivery.emailError || 'Nao foi possivel enviar o e-mail.');
+  };
+
   return (
     <div className="min-h-screen bg-marra-paper text-marra-text">
       <ToastStack toasts={toasts} />
@@ -400,7 +412,12 @@ function App() {
                   });
                   saveDeliveries([result.delivery, ...deliveries]);
                   setSelectedDeliveryId(result.delivery.id);
-                  toast('success', `Entrega ${result.delivery.protocol} registrada.`);
+                  toast(
+                    result.delivery.emailStatus === 'Enviado' ? 'success' : 'error',
+                    result.delivery.emailStatus === 'Enviado'
+                      ? `Entrega ${result.delivery.protocol} registrada e enviada por e-mail.`
+                      : `Entrega registrada. E-mail: ${result.delivery.emailStatus || 'pendente'}.`,
+                  );
                   setView('receipt');
                 } catch (error) {
                   toast('error', error instanceof Error ? error.message : 'Nao foi possivel registrar a entrega.');
@@ -418,7 +435,7 @@ function App() {
             />
           )}
           {view === 'deliveryDetails' && selectedDelivery && (
-            <DeliveryDetails delivery={selectedDelivery} clients={clients} drivers={drivers} onReceipt={() => setView('receipt')} />
+            <DeliveryDetails delivery={selectedDelivery} clients={clients} drivers={drivers} onReceipt={() => setView('receipt')} onSendEmail={resendDeliveryEmail} />
           )}
           {view === 'receipt' && selectedDelivery && <Receipt delivery={selectedDelivery} clients={clients} drivers={drivers} />}
           {view === 'account' && <AccountScreen driver={currentDriver} onDeleteAccount={deleteMyAccount} toast={toast} />}
@@ -439,7 +456,7 @@ function App() {
             />
           )}
           {view === 'deliveryDetails' && selectedDelivery && (
-            <DeliveryDetails delivery={selectedDelivery} clients={clients} drivers={drivers} onReceipt={() => setView('receipt')} />
+            <DeliveryDetails delivery={selectedDelivery} clients={clients} drivers={drivers} onReceipt={() => setView('receipt')} onSendEmail={resendDeliveryEmail} />
           )}
           {view === 'receipt' && selectedDelivery && <Receipt delivery={selectedDelivery} clients={clients} drivers={drivers} />}
         </AdminShell>
@@ -1127,14 +1144,17 @@ function DeliveryDetails({
   clients,
   drivers,
   onReceipt,
+  onSendEmail,
 }: {
   delivery: Delivery;
   clients: Client[];
   drivers: Driver[];
   onReceipt: () => void;
+  onSendEmail: (id: string) => Promise<void>;
 }) {
   const client = clients.find((item) => item.id === delivery.clientId);
   const driver = drivers.find((item) => item.id === delivery.driverId);
+  const [sending, setSending] = useState(false);
   return (
     <div className="space-y-6">
       <SectionHeader title="Detalhes da Entrega" subtitle={delivery.protocol} />
@@ -1151,14 +1171,36 @@ function DeliveryDetails({
               ['Localizacao aproximada', delivery.locationLabel || '-'],
               ['Latitude', delivery.latitude?.toFixed(6) ?? '-'],
               ['Longitude', delivery.longitude?.toFixed(6) ?? '-'],
+              ['Envio por e-mail', delivery.emailStatus || 'Pendente'],
+              ['Destinatarios', delivery.emailRecipients || '-'],
+              ['Enviado em', delivery.emailSentAt ? formatDateTime(delivery.emailSentAt) : '-'],
               ['Observacoes', delivery.notes || '-'],
             ]}
           />
+          {delivery.emailError && (
+            <div className="mt-4 rounded-lg bg-amber-50 p-4 text-sm font-bold text-amber-800">
+              E-mail: {delivery.emailError}
+            </div>
+          )}
           <LocationPreview latitude={delivery.latitude} longitude={delivery.longitude} label={delivery.locationLabel} />
         </div>
         <div className="space-y-4">
           <button onClick={onReceipt} className="flex w-full items-center justify-center gap-2 rounded-lg bg-marra-primary px-5 py-3 font-black text-white">
             <FileText size={18} /> Visualizar Comprovante
+          </button>
+          <button
+            disabled={sending}
+            onClick={async () => {
+              setSending(true);
+              try {
+                await onSendEmail(delivery.id);
+              } finally {
+                setSending(false);
+              }
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-marra-primary px-5 py-3 font-black text-marra-primary disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Mail size={18} /> {sending ? 'Enviando...' : 'Reenviar comprovante por e-mail'}
           </button>
           <ImagePreview title="Foto da NF" src={delivery.nfPhoto} />
           <ImagePreview title="Foto da entrega" src={delivery.deliveryPhoto} />

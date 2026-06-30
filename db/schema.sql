@@ -66,12 +66,20 @@ CREATE TABLE IF NOT EXISTS deliveries (
   latitude NUMERIC,
   longitude NUMERIC,
   location_label TEXT,
+  email_status TEXT NOT NULL DEFAULT 'Pendente',
+  email_sent_at TIMESTAMPTZ,
+  email_recipients TEXT,
+  email_error TEXT,
   delivered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   status TEXT NOT NULL DEFAULT 'Concluida',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS location_label TEXT;
+ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS email_status TEXT NOT NULL DEFAULT 'Pendente';
+ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ;
+ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS email_recipients TEXT;
+ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS email_error TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_drivers_email ON drivers(email);
 CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status);
