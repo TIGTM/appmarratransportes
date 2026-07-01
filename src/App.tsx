@@ -1463,6 +1463,7 @@ function ClientsManager({ clients, saveClients, toast }: { clients: Client[]; sa
                 </button>
                 <button
                   onClick={async () => {
+                    if (!window.confirm(`Deseja excluir o cliente ${client.companyName}?`)) return;
                     try {
                       await saveClients(clients.filter((item) => item.id !== client.id));
                       toast('success', 'Cliente removido.');

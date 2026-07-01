@@ -692,6 +692,12 @@ app.put('/api/clients/:id', authenticate, requireAdmin, async (req, res) => {
 });
 
 app.delete('/api/clients/:id', authenticate, requireAdmin, async (req, res) => {
+  const linked = await pool.query('SELECT COUNT(*)::int AS count FROM deliveries WHERE client_id = $1', [req.params.id]);
+  if (linked.rows[0].count > 0) {
+    return res.status(409).json({
+      message: `Este cliente possui ${linked.rows[0].count} entrega(s) vinculada(s). Para preservar os comprovantes, ele nao pode ser excluido.`,
+    });
+  }
   await pool.query('DELETE FROM clients WHERE id = $1', [req.params.id]);
   res.status(204).end();
 });
