@@ -21,6 +21,10 @@ const app = express();
 const port = Number(process.env.PORT || 5173);
 const jwtSecret = process.env.JWT_SECRET || 'dev-only-change-me';
 const adminEmail = process.env.ADMIN_EMAIL || 'admin@marra.com';
+const adminEmails = (process.env.ADMIN_EMAILS || adminEmail)
+  .split(/[;,]/)
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
 const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
 const currentTermsVersion = '2026-06-28';
 const driverCommissionRate = 16;
@@ -532,7 +536,7 @@ app.post('/api/auth/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ message: 'E-mail e senha sao obrigatorios.' });
 
   if (role === 'admin') {
-    if (email !== adminEmail || password !== adminPassword) {
+    if (!adminEmails.includes(String(email).toLowerCase()) || password !== adminPassword) {
       return res.status(401).json({ message: 'Credenciais administrativas invalidas.' });
     }
     return res.json({ token: signSession({ role: 'admin', email }), session: { role: 'admin' } });

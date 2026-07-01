@@ -30,6 +30,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-marra_user}:${POSTGRES_PASSWORD:-marra_change_me}@marra-db:5432/${POSTGRES_DB:-marra_transportes}
       JWT_SECRET: ${JWT_SECRET:-change_this_secret_before_production}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@marra.local}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@marra.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change_this_password_before_production}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
