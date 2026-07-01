@@ -89,6 +89,7 @@ type Delivery = {
   latitude?: number;
   longitude?: number;
   locationLabel?: string;
+  receiptToken?: string;
   emailStatus?: string;
   emailSentAt?: string;
   emailRecipients?: string;
@@ -1155,6 +1156,7 @@ function DeliveryDetails({
   const client = clients.find((item) => item.id === delivery.clientId);
   const driver = drivers.find((item) => item.id === delivery.driverId);
   const [sending, setSending] = useState(false);
+  const receiptUrl = delivery.receiptToken ? `${window.location.origin}/comprovante/${delivery.receiptToken}` : '';
   return (
     <div className="space-y-6">
       <SectionHeader title="Detalhes da Entrega" subtitle={delivery.protocol} />
@@ -1188,6 +1190,11 @@ function DeliveryDetails({
           <button onClick={onReceipt} className="flex w-full items-center justify-center gap-2 rounded-lg bg-marra-primary px-5 py-3 font-black text-white">
             <FileText size={18} /> Visualizar Comprovante
           </button>
+          {receiptUrl && (
+            <a href={receiptUrl} target="_blank" rel="noreferrer" className="flex w-full items-center justify-center gap-2 rounded-lg bg-sky-50 px-5 py-3 font-black text-marra-primary">
+              <Eye size={18} /> Abrir link publico
+            </a>
+          )}
           <button
             disabled={sending}
             onClick={async () => {

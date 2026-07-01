@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
   latitude NUMERIC,
   longitude NUMERIC,
   location_label TEXT,
+  receipt_token TEXT UNIQUE,
   email_status TEXT NOT NULL DEFAULT 'Pendente',
   email_sent_at TIMESTAMPTZ,
   email_recipients TEXT,
@@ -76,6 +77,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
 );
 
 ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS location_label TEXT;
+ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS receipt_token TEXT UNIQUE;
 ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS email_status TEXT NOT NULL DEFAULT 'Pendente';
 ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ;
 ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS email_recipients TEXT;
@@ -100,6 +102,7 @@ CREATE INDEX IF NOT EXISTS idx_clients_company_name ON clients(company_name);
 CREATE INDEX IF NOT EXISTS idx_deliveries_driver ON deliveries(driver_id);
 CREATE INDEX IF NOT EXISTS idx_deliveries_client ON deliveries(client_id);
 CREATE INDEX IF NOT EXISTS idx_deliveries_protocol ON deliveries(protocol);
+CREATE INDEX IF NOT EXISTS idx_deliveries_receipt_token ON deliveries(receipt_token);
 CREATE INDEX IF NOT EXISTS idx_deliveries_delivered_at ON deliveries(delivered_at);
 CREATE INDEX IF NOT EXISTS idx_delivery_email_logs_delivery ON delivery_email_logs(delivery_id);
 CREATE INDEX IF NOT EXISTS idx_delivery_email_logs_recipient ON delivery_email_logs(recipient);

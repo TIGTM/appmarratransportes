@@ -39,6 +39,7 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
       MARRA_NOTIFICATION_EMAILS: ${MARRA_NOTIFICATION_EMAILS:-}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://app.marratransportes.com.br}
     ports:
       - "127.0.0.1:5173:5173"
     volumes:

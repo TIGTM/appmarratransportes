@@ -29,6 +29,7 @@ const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
 const currentTermsVersion = '2026-06-28';
 const driverCommissionRate = 16;
 const validCnhCategories = ['C', 'D', 'E'];
+const publicAppUrl = (process.env.PUBLIC_APP_URL || process.env.APP_URL || 'https://app.marratransportes.com.br').replace(/\/+$/, '');
 const marraNotificationEmails = (process.env.MARRA_NOTIFICATION_EMAILS || process.env.MARRA_EMAIL || '')
   .split(/[;,]/)
   .map((email) => email.trim())
@@ -206,6 +207,7 @@ function mapDelivery(row) {
     latitude: row.latitude === null ? undefined : Number(row.latitude),
     longitude: row.longitude === null ? undefined : Number(row.longitude),
     locationLabel: row.location_label || '',
+    receiptToken: row.receipt_token || '',
     emailStatus: row.email_status || 'Pendente',
     emailSentAt: row.email_sent_at ? new Date(row.email_sent_at).toISOString() : '',
     emailRecipients: row.email_recipients || '',
@@ -214,6 +216,15 @@ function mapDelivery(row) {
     time: deliveredAt.toTimeString().slice(0, 5),
     status: row.status,
   };
+}
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
 function smtpConfigured() {
@@ -241,6 +252,26 @@ function splitEmails(value = '') {
 
 function uniqueEmails(items) {
   return [...new Set(items.map((email) => email.trim().toLowerCase()).filter(Boolean))];
+}
+
+function isMarraEmail(email = '') {
+  return String(email).trim().toLowerCase().endsWith('@marratransportes.com.br');
+}
+
+function createReceiptToken() {
+  return crypto.randomBytes(24).toString('base64url');
+}
+
+async function ensureReceiptToken(deliveryId) {
+  const current = await pool.query('SELECT receipt_token FROM deliveries WHERE id = $1', [deliveryId]);
+  if (!current.rows[0]) throw new Error('Entrega nao encontrada para gerar link do comprovante.');
+  if (current.rows[0].receipt_token) return current.rows[0].receipt_token;
+
+  const result = await pool.query(
+    'UPDATE deliveries SET receipt_token = $1 WHERE id = $2 RETURNING receipt_token',
+    [createReceiptToken(), deliveryId],
+  );
+  return result.rows[0].receipt_token;
 }
 
 function uploadPathFromUrl(url) {
@@ -416,6 +447,13 @@ async function getDeliveryContext(deliveryId) {
   };
 }
 
+async function getDeliveryContextByToken(token) {
+  if (!token || !/^[A-Za-z0-9_-]{24,}$/.test(String(token))) return null;
+  const result = await pool.query('SELECT id FROM deliveries WHERE receipt_token = $1', [token]);
+  if (!result.rows[0]) return null;
+  return getDeliveryContext(result.rows[0].id);
+}
+
 async function updateDeliveryEmailStatus(deliveryId, status, recipients = [], error = '') {
   const result = await pool.query(
     `UPDATE deliveries
@@ -466,6 +504,8 @@ async function sendDeliveryReceiptEmail(deliveryId) {
   }
 
   try {
+    const receiptToken = await ensureReceiptToken(deliveryId);
+    const receiptUrl = `${publicAppUrl}/comprovante/${receiptToken}`;
     const pdf = await generateDeliveryReceiptPdf(context);
     const from = process.env.SMTP_FROM || process.env.SMTP_USER;
     const transporter = createTransporter();
@@ -480,55 +520,63 @@ async function sendDeliveryReceiptEmail(deliveryId) {
       ['Endereco', context.delivery.address],
     ];
     const subject = `Comprovante de entrega ${context.delivery.protocol} - Marra Transportes`;
-    const text = [
-      `Segue em anexo o comprovante de entrega ${context.delivery.protocol}.`,
-      '',
-      `Motorista: ${context.driver.name}`,
-      `Cliente: ${context.client.company_name}`,
-      `Documento: ${context.delivery.document_type}`,
-      `Endereco: ${context.delivery.address}`,
-      '',
-      'Mensagem automatica do sistema Marra Transportes.',
-    ].join('\n');
-    const html = `
-      <div style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:24px 0;">
-          <tr>
-            <td align="center">
-              <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid #dbe3ec;border-radius:8px;overflow:hidden;">
-                <tr>
-                  <td style="background:#005A9C;padding:22px 28px;color:#ffffff;">
-                    <div style="font-size:22px;font-weight:700;letter-spacing:.2px;">Marra Transportes</div>
-                    <div style="font-size:13px;margin-top:6px;color:#dbeafe;">Comprovante digital de entrega</div>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:28px;">
-                    <p style="margin:0 0 16px;font-size:16px;line-height:1.5;">O comprovante da entrega <strong>${context.delivery.protocol}</strong> foi gerado e segue em anexo no formato PDF.</p>
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:18px 0;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;">
-                      ${emailSummaryRows
-                        .map(
-                          ([label, value]) => `
-                            <tr>
-                              <td style="width:140px;background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:10px 12px;font-size:12px;font-weight:700;color:#005A9C;text-transform:uppercase;">${label}</td>
-                              <td style="border-bottom:1px solid #e2e8f0;padding:10px 12px;font-size:14px;color:#111827;">${value || '-'}</td>
-                            </tr>
-                          `,
-                        )
-                        .join('')}
-                    </table>
-                    <p style="margin:18px 0 0;font-size:13px;line-height:1.5;color:#475569;">Este e-mail foi enviado automaticamente pelo sistema Marra Transportes. Guarde o PDF anexo como comprovante operacional.</p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-      </div>
-    `;
     const failed = [];
     const sent = [];
     for (const recipient of recipients) {
+      const attachPdf = isMarraEmail(recipient);
+      const text = [
+        `O comprovante de entrega ${context.delivery.protocol} foi gerado pela Marra Transportes.`,
+        '',
+        `Visualizar comprovante: ${receiptUrl}`,
+        attachPdf ? 'O PDF tambem segue anexado neste e-mail.' : 'Para melhorar a entrega do e-mail, o PDF pode ser baixado pelo link acima.',
+        '',
+        `Motorista: ${context.driver.name}`,
+        `Cliente: ${context.client.company_name}`,
+        `Documento: ${context.delivery.document_type}`,
+        `Endereco: ${context.delivery.address}`,
+        '',
+        'Mensagem automatica do sistema Marra Transportes.',
+      ].join('\n');
+      const html = `
+        <div style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:24px 0;">
+            <tr>
+              <td align="center">
+                <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid #dbe3ec;border-radius:8px;overflow:hidden;">
+                  <tr>
+                    <td style="background:#005A9C;padding:22px 28px;color:#ffffff;">
+                      <div style="font-size:22px;font-weight:700;letter-spacing:.2px;">Marra Transportes</div>
+                      <div style="font-size:13px;margin-top:6px;color:#dbeafe;">Comprovante digital de entrega</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:28px;">
+                      <p style="margin:0 0 16px;font-size:16px;line-height:1.5;">O comprovante da entrega <strong>${escapeHtml(context.delivery.protocol)}</strong> foi gerado pelo sistema Marra Transportes.</p>
+                      <p style="margin:0 0 20px;font-size:14px;line-height:1.5;color:#475569;">${attachPdf ? 'O PDF tambem segue anexado neste e-mail.' : 'Acesse o link abaixo para visualizar ou baixar o PDF do comprovante.'}</p>
+                      <p style="margin:0 0 22px;">
+                        <a href="${escapeHtml(receiptUrl)}" style="display:inline-block;background:#005A9C;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 18px;border-radius:6px;">Visualizar comprovante</a>
+                      </p>
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:18px 0;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;">
+                        ${emailSummaryRows
+                          .map(
+                            ([label, value]) => `
+                              <tr>
+                                <td style="width:140px;background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:10px 12px;font-size:12px;font-weight:700;color:#005A9C;text-transform:uppercase;">${escapeHtml(label)}</td>
+                                <td style="border-bottom:1px solid #e2e8f0;padding:10px 12px;font-size:14px;color:#111827;">${escapeHtml(value || '-')}</td>
+                              </tr>
+                            `,
+                          )
+                          .join('')}
+                      </table>
+                      <p style="margin:18px 0 0;font-size:13px;line-height:1.5;color:#475569;">Este e-mail foi enviado automaticamente pelo sistema Marra Transportes.</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </div>
+      `;
       try {
         const info = await transporter.sendMail({
           from,
@@ -544,13 +592,15 @@ async function sendDeliveryReceiptEmail(deliveryId) {
           headers: {
             'X-Marra-Protocol': context.delivery.protocol,
           },
-          attachments: [
-            {
-              filename: `${context.delivery.protocol}.pdf`,
-              content: pdf,
-              contentType: 'application/pdf',
-            },
-          ],
+          attachments: attachPdf
+            ? [
+                {
+                  filename: `${context.delivery.protocol}.pdf`,
+                  content: pdf,
+                  contentType: 'application/pdf',
+                },
+              ]
+            : [],
         });
         sent.push(recipient);
         await logDeliveryEmail(deliveryId, recipient, 'Enviado', {
@@ -577,6 +627,81 @@ async function sendDeliveryReceiptEmail(deliveryId) {
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'appmarratransportes' });
+});
+
+app.get('/comprovante/:token', async (req, res) => {
+  const context = await getDeliveryContextByToken(req.params.token);
+  if (!context) return res.status(404).send('Comprovante nao encontrado.');
+
+  const deliveredAt = new Date(context.delivery.delivered_at);
+  const protocol = escapeHtml(context.delivery.protocol);
+  const summaryRows = [
+    ['Protocolo', context.delivery.protocol],
+    ['Motorista', context.driver.name],
+    ['Cliente', context.client.company_name],
+    ['Documento', context.delivery.document_type],
+    ['Endereco', context.delivery.address],
+    ['Data', formatDateBr(deliveredAt)],
+    ['Hora', formatTimeBr(deliveredAt)],
+    ['Placa', context.delivery.plate],
+    ['Localizacao', context.delivery.location_label || '-'],
+  ];
+
+  res.type('html').send(`<!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Comprovante ${protocol} - Marra Transportes</title>
+        <style>
+          body { margin: 0; background: #f4f6f8; color: #0f172a; font-family: Arial, Helvetica, sans-serif; }
+          .wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px; }
+          .card { background: #fff; border: 1px solid #dbe3ec; border-radius: 10px; overflow: hidden; box-shadow: 0 12px 30px rgba(15, 23, 42, .08); }
+          .head { background: #005A9C; color: #fff; padding: 24px; }
+          h1 { margin: 0; font-size: 24px; }
+          .sub { margin-top: 6px; color: #dbeafe; font-size: 14px; }
+          .body { padding: 24px; }
+          .protocol { background: #eff6ff; border: 1px solid #bfdbfe; color: #005A9C; border-radius: 8px; padding: 16px; font-weight: 800; font-size: 22px; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+          td { padding: 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+          td:first-child { width: 160px; background: #f8fafc; color: #005A9C; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+          .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+          a.button { display: inline-block; background: #005A9C; color: #fff; text-decoration: none; font-weight: 800; border-radius: 8px; padding: 13px 18px; }
+          a.secondary { background: #e0f2fe; color: #005A9C; }
+          .note { margin-top: 18px; color: #64748b; font-size: 13px; line-height: 1.5; }
+        </style>
+      </head>
+      <body>
+        <main class="wrap">
+          <section class="card">
+            <div class="head">
+              <h1>Comprovante de entrega</h1>
+              <div class="sub">Marra Transportes</div>
+            </div>
+            <div class="body">
+              <div class="protocol">${protocol}</div>
+              <table>
+                ${summaryRows.map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value || '-')}</td></tr>`).join('')}
+              </table>
+              <div class="actions">
+                <a class="button" href="/comprovante/${escapeHtml(req.params.token)}/pdf">Baixar PDF</a>
+                <a class="button secondary" href="/comprovante/${escapeHtml(req.params.token)}/pdf" target="_blank" rel="noopener">Abrir em nova aba</a>
+              </div>
+              <p class="note">Este link permite consultar o comprovante digital da entrega. Guarde o PDF como documento operacional.</p>
+            </div>
+          </section>
+        </main>
+      </body>
+    </html>`);
+});
+
+app.get('/comprovante/:token/pdf', async (req, res) => {
+  const context = await getDeliveryContextByToken(req.params.token);
+  if (!context) return res.status(404).send('Comprovante nao encontrado.');
+  const pdf = await generateDeliveryReceiptPdf(context);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${context.delivery.protocol}.pdf"`);
+  res.send(pdf);
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -797,10 +922,10 @@ app.post('/api/deliveries', authenticate, async (req, res) => {
 
   const result = await pool.query(
     `INSERT INTO deliveries
-      (id, protocol, driver_id, client_id, document_type, address, plate, notes, nf_photo_url, delivery_photo_url, signature_url, latitude, longitude, location_label, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'Concluida')
+      (id, protocol, driver_id, client_id, document_type, address, plate, notes, nf_photo_url, delivery_photo_url, signature_url, latitude, longitude, location_label, receipt_token, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'Concluida')
      RETURNING *`,
-    [id, protocol, req.user.driverId, clientId, documentType, address, plate, notes || '', nfPhotoUrl, deliveryPhotoUrl, signatureUrl, latitude || null, longitude || null, locationLabel || ''],
+    [id, protocol, req.user.driverId, clientId, documentType, address, plate, notes || '', nfPhotoUrl, deliveryPhotoUrl, signatureUrl, latitude || null, longitude || null, locationLabel || '', createReceiptToken()],
   );
   const emailedDelivery = await sendDeliveryReceiptEmail(result.rows[0].id);
   res.status(201).json({ delivery: emailedDelivery || mapDelivery(result.rows[0]) });
