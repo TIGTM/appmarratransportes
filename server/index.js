@@ -244,6 +244,18 @@ function uploadPathFromUrl(url) {
   return path.join(uploadsDir, path.basename(url));
 }
 
+async function firstExistingPath(paths) {
+  for (const item of paths) {
+    try {
+      await fs.access(item);
+      return item;
+    } catch {
+      // Try next candidate.
+    }
+  }
+  return '';
+}
+
 function formatDateBr(date) {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(date);
 }
@@ -252,7 +264,12 @@ function formatTimeBr(date) {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(date);
 }
 
-function generateDeliveryReceiptPdf({ delivery, driver, client }) {
+async function generateDeliveryReceiptPdf({ delivery, driver, client }) {
+  const logoPath = await firstExistingPath([
+    path.join(distDir, 'marra-logo-tight.png'),
+    path.join(rootDir, 'public', 'marra-logo-tight.png'),
+  ]);
+
   return new Promise((resolve, reject) => {
     const deliveredAt = new Date(delivery.delivered_at);
     const pdf = new PDFDocument({ size: 'A4', margin: 42, bufferPages: true });
@@ -264,16 +281,18 @@ function generateDeliveryReceiptPdf({ delivery, driver, client }) {
     const primary = '#005A9C';
     const muted = '#64748B';
     const pageWidth = pdf.page.width;
+    const pageHeight = pdf.page.height;
     const contentWidth = pageWidth - 84;
+    const contentHeight = pageHeight - 124;
 
     const addHeader = (title) => {
       pdf.rect(0, 0, pageWidth, 82).fill(primary);
-      const logoPath = path.join(rootDir, 'public', 'marra-logo-tight.png');
-      pdf.roundedRect(42, 18, 92, 42, 4).fill('#FFFFFF');
+      pdf.roundedRect(42, 14, 116, 50, 4).fill('#FFFFFF');
       try {
-        pdf.image(logoPath, 49, 23, { fit: [78, 32], align: 'center', valign: 'center' });
+        if (!logoPath) throw new Error('Logo indisponivel.');
+        pdf.image(logoPath, 51, 18, { fit: [98, 42], align: 'center', valign: 'center' });
       } catch {
-        pdf.fillColor(primary).fontSize(9).font('Helvetica-Bold').text('MARRA TRANSPORTES', 52, 34);
+        pdf.fillColor(primary).fontSize(9).font('Helvetica-Bold').text('MARRA TRANSPORTES', 55, 36, { width: 90, align: 'center' });
       }
       pdf.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(17).text(title, 154, 24);
       pdf.font('Helvetica').fontSize(9).text('Documento gerado automaticamente pelo sistema Marra Transportes', 154, 48);
@@ -315,29 +334,34 @@ function generateDeliveryReceiptPdf({ delivery, driver, client }) {
     pdf.fillColor(primary).font('Helvetica-Bold').fontSize(9).text('OBSERVACOES', 42, y);
     pdf.fillColor('#0F172A').font('Helvetica').fontSize(10).text(delivery.notes || '-', 42, y + 14, { width: contentWidth });
 
-    pdf.addPage();
-    addHeader('EVIDENCIAS DA ENTREGA');
-    pdf.y = 104;
-    const imageBox = (label, url, height) => {
-      const top = pdf.y;
-      pdf.roundedRect(42, top, contentWidth, height, 4).stroke('#CBD5E1');
-      pdf.fillColor(primary).font('Helvetica-Bold').fontSize(9).text(label, 54, top + 10);
+    const imagePage = (label, url) => {
+      pdf.addPage({ margin: 42 });
+      addHeader(label.toUpperCase());
+      const top = 108;
+      const imageTop = top + 28;
+      const imageHeight = contentHeight - 36;
+      pdf.roundedRect(42, top, contentWidth, contentHeight, 4).stroke('#CBD5E1');
+      pdf.fillColor(primary).font('Helvetica-Bold').fontSize(12).text(label, 54, top + 10);
       const filePath = uploadPathFromUrl(url);
       try {
-        if (filePath) pdf.image(filePath, 54, top + 26, { fit: [contentWidth - 24, height - 36], align: 'center', valign: 'center' });
+        if (!filePath) throw new Error('Arquivo indisponivel.');
+        pdf.image(filePath, 54, imageTop, {
+          cover: [contentWidth - 24, imageHeight],
+          align: 'center',
+          valign: 'center',
+        });
       } catch {
-        pdf.fillColor(muted).fontSize(9).text('Imagem indisponivel no arquivo.', 54, top + 32);
+        pdf.fillColor(muted).fontSize(10).text('Imagem indisponivel no arquivo.', 54, imageTop);
       }
-      pdf.y = top + height + 14;
     };
-    imageBox('Foto da NF', delivery.nf_photo_url, 138);
-    imageBox('Foto da entrega', delivery.delivery_photo_url, 138);
-    imageBox('Assinatura', delivery.signature_url, 86);
+    imagePage('Foto da NF', delivery.nf_photo_url);
+    imagePage('Foto da entrega', delivery.delivery_photo_url);
+    imagePage('Assinatura', delivery.signature_url);
 
     const pages = pdf.bufferedPageRange();
     for (let i = 0; i < pages.count; i += 1) {
       pdf.switchToPage(i);
-      pdf.fillColor(muted).font('Helvetica').fontSize(8).text(`Pagina ${i + 1} de ${pages.count}`, 42, pdf.page.height - 34, { align: 'right' });
+      pdf.fillColor(muted).font('Helvetica').fontSize(8).text(`Pagina ${i + 1} de ${pages.count}`, 42, pdf.page.height - 34, { width: contentWidth, align: 'right' });
     }
 
     pdf.end();
