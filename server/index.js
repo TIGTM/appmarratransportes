@@ -299,6 +299,19 @@ async function generateDeliveryReceiptPdf({ delivery, driver, client }) {
       pdf.moveDown();
     };
 
+    const addEvidenceHeader = (title) => {
+      pdf.rect(0, 0, pageWidth, 72).fill(primary);
+      pdf.roundedRect(42, 14, 96, 42, 4).fill('#FFFFFF');
+      try {
+        if (!logoPath) throw new Error('Logo indisponivel.');
+        pdf.image(logoPath, 50, 17, { fit: [80, 34], align: 'center', valign: 'center' });
+      } catch {
+        pdf.fillColor(primary).fontSize(8).font('Helvetica-Bold').text('MARRA TRANSPORTES', 50, 32, { width: 80, align: 'center' });
+      }
+      pdf.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(15).text(title, 158, 22, { width: pageWidth - 200 });
+      pdf.font('Helvetica').fontSize(8).text('Evidencia anexada ao comprovante de entrega', 158, 43, { width: pageWidth - 200 });
+    };
+
     const field = (label, value, x, y, width) => {
       pdf.roundedRect(x, y, width, 42, 4).fill('#F8FAFC').stroke('#E2E8F0');
       pdf.fillColor(muted).font('Helvetica-Bold').fontSize(7).text(label.toUpperCase(), x + 10, y + 9, { width: width - 20 });
@@ -336,11 +349,11 @@ async function generateDeliveryReceiptPdf({ delivery, driver, client }) {
 
     const imagePage = (label, url, mode = 'cover') => {
       pdf.addPage({ margin: 42 });
-      addHeader(label.toUpperCase());
-      const top = 108;
+      addEvidenceHeader(label.toUpperCase());
+      const top = 98;
       const imageTop = top + 28;
-      const imageHeight = contentHeight - 36;
-      pdf.roundedRect(42, top, contentWidth, contentHeight, 4).stroke('#CBD5E1');
+      const imageHeight = pageHeight - top - 92;
+      pdf.roundedRect(42, top, contentWidth, pageHeight - top - 76, 4).stroke('#CBD5E1');
       pdf.fillColor(primary).font('Helvetica-Bold').fontSize(12).text(label, 54, top + 10);
       const filePath = uploadPathFromUrl(url);
       try {
@@ -449,6 +462,16 @@ async function sendDeliveryReceiptEmail(deliveryId) {
     const pdf = await generateDeliveryReceiptPdf(context);
     const from = process.env.SMTP_FROM || process.env.SMTP_USER;
     const transporter = createTransporter();
+    const deliveredAt = new Date(context.delivery.delivered_at);
+    const emailSummaryRows = [
+      ['Protocolo', context.delivery.protocol],
+      ['Motorista', context.driver.name],
+      ['Cliente', context.client.company_name],
+      ['Documento', context.delivery.document_type],
+      ['Data', formatDateBr(deliveredAt)],
+      ['Hora', formatTimeBr(deliveredAt)],
+      ['Endereco', context.delivery.address],
+    ];
     await transporter.sendMail({
       from,
       to: recipients,
@@ -464,12 +487,40 @@ async function sendDeliveryReceiptEmail(deliveryId) {
         'Mensagem automatica do sistema Marra Transportes.',
       ].join('\n'),
       html: `
-        <p>Segue em anexo o comprovante de entrega <strong>${context.delivery.protocol}</strong>.</p>
-        <p><strong>Motorista:</strong> ${context.driver.name}<br/>
-        <strong>Cliente:</strong> ${context.client.company_name}<br/>
-        <strong>Documento:</strong> ${context.delivery.document_type}<br/>
-        <strong>Endereco:</strong> ${context.delivery.address}</p>
-        <p>Mensagem automatica do sistema Marra Transportes.</p>
+        <div style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:24px 0;">
+            <tr>
+              <td align="center">
+                <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid #dbe3ec;border-radius:8px;overflow:hidden;">
+                  <tr>
+                    <td style="background:#005A9C;padding:22px 28px;color:#ffffff;">
+                      <div style="font-size:22px;font-weight:700;letter-spacing:.2px;">Marra Transportes</div>
+                      <div style="font-size:13px;margin-top:6px;color:#dbeafe;">Comprovante digital de entrega</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:28px;">
+                      <p style="margin:0 0 16px;font-size:16px;line-height:1.5;">O comprovante da entrega <strong>${context.delivery.protocol}</strong> foi gerado e segue em anexo no formato PDF.</p>
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:18px 0;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;">
+                        ${emailSummaryRows
+                          .map(
+                            ([label, value]) => `
+                              <tr>
+                                <td style="width:140px;background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:10px 12px;font-size:12px;font-weight:700;color:#005A9C;text-transform:uppercase;">${label}</td>
+                                <td style="border-bottom:1px solid #e2e8f0;padding:10px 12px;font-size:14px;color:#111827;">${value || '-'}</td>
+                              </tr>
+                            `,
+                          )
+                          .join('')}
+                      </table>
+                      <p style="margin:18px 0 0;font-size:13px;line-height:1.5;color:#475569;">Este e-mail foi enviado automaticamente pelo sistema Marra Transportes. Guarde o PDF anexo como comprovante operacional.</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </div>
       `,
       attachments: [
         {
