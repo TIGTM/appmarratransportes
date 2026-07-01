@@ -299,19 +299,6 @@ async function generateDeliveryReceiptPdf({ delivery, driver, client }) {
       pdf.moveDown();
     };
 
-    const addEvidenceHeader = (title) => {
-      pdf.rect(0, 0, pageWidth, 72).fill(primary);
-      pdf.roundedRect(42, 14, 96, 42, 4).fill('#FFFFFF');
-      try {
-        if (!logoPath) throw new Error('Logo indisponivel.');
-        pdf.image(logoPath, 50, 17, { fit: [80, 34], align: 'center', valign: 'center' });
-      } catch {
-        pdf.fillColor(primary).fontSize(8).font('Helvetica-Bold').text('MARRA TRANSPORTES', 50, 32, { width: 80, align: 'center' });
-      }
-      pdf.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(15).text(title, 158, 22, { width: pageWidth - 200 });
-      pdf.font('Helvetica').fontSize(8).text('Evidencia anexada ao comprovante de entrega', 158, 43, { width: pageWidth - 200 });
-    };
-
     const field = (label, value, x, y, width) => {
       pdf.roundedRect(x, y, width, 42, 4).fill('#F8FAFC').stroke('#E2E8F0');
       pdf.fillColor(muted).font('Helvetica-Bold').fontSize(7).text(label.toUpperCase(), x + 10, y + 9, { width: width - 20 });
@@ -349,7 +336,7 @@ async function generateDeliveryReceiptPdf({ delivery, driver, client }) {
 
     const imagePage = (label, url, mode = 'cover') => {
       pdf.addPage({ margin: 42 });
-      addEvidenceHeader(label.toUpperCase());
+      addHeader(label.toUpperCase());
       const top = 98;
       const imageTop = top + 28;
       const imageHeight = pageHeight - top - 92;
