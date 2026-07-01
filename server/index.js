@@ -294,8 +294,8 @@ async function generateDeliveryReceiptPdf({ delivery, driver, client }) {
       } catch {
         pdf.fillColor(primary).fontSize(9).font('Helvetica-Bold').text('MARRA TRANSPORTES', 55, 36, { width: 90, align: 'center' });
       }
-      pdf.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(17).text(title, 154, 24);
-      pdf.font('Helvetica').fontSize(9).text('Documento gerado automaticamente pelo sistema Marra Transportes', 154, 48);
+      pdf.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(17).text(title, 178, 24, { width: pageWidth - 220 });
+      pdf.font('Helvetica').fontSize(9).text('Documento gerado automaticamente pelo sistema Marra Transportes', 178, 48, { width: pageWidth - 220 });
       pdf.moveDown();
     };
 
@@ -334,7 +334,7 @@ async function generateDeliveryReceiptPdf({ delivery, driver, client }) {
     pdf.fillColor(primary).font('Helvetica-Bold').fontSize(9).text('OBSERVACOES', 42, y);
     pdf.fillColor('#0F172A').font('Helvetica').fontSize(10).text(delivery.notes || '-', 42, y + 14, { width: contentWidth });
 
-    const imagePage = (label, url) => {
+    const imagePage = (label, url, mode = 'cover') => {
       pdf.addPage({ margin: 42 });
       addHeader(label.toUpperCase());
       const top = 108;
@@ -345,23 +345,22 @@ async function generateDeliveryReceiptPdf({ delivery, driver, client }) {
       const filePath = uploadPathFromUrl(url);
       try {
         if (!filePath) throw new Error('Arquivo indisponivel.');
-        pdf.image(filePath, 54, imageTop, {
-          cover: [contentWidth - 24, imageHeight],
-          align: 'center',
-          valign: 'center',
-        });
+        const imageOptions = mode === 'fit'
+          ? { fit: [contentWidth - 24, imageHeight], align: 'center', valign: 'center' }
+          : { cover: [contentWidth - 24, imageHeight], align: 'center', valign: 'center' };
+        pdf.image(filePath, 54, imageTop, imageOptions);
       } catch {
         pdf.fillColor(muted).fontSize(10).text('Imagem indisponivel no arquivo.', 54, imageTop);
       }
     };
     imagePage('Foto da NF', delivery.nf_photo_url);
     imagePage('Foto da entrega', delivery.delivery_photo_url);
-    imagePage('Assinatura', delivery.signature_url);
+    imagePage('Assinatura', delivery.signature_url, 'fit');
 
     const pages = pdf.bufferedPageRange();
     for (let i = 0; i < pages.count; i += 1) {
       pdf.switchToPage(i);
-      pdf.fillColor(muted).font('Helvetica').fontSize(8).text(`Pagina ${i + 1} de ${pages.count}`, 42, pdf.page.height - 34, { width: contentWidth, align: 'right' });
+      pdf.fillColor(muted).font('Helvetica').fontSize(8).text(`Pagina ${i + 1} de ${pages.count}`, 42, pdf.page.height - 54, { width: contentWidth, align: 'right', lineBreak: false });
     }
 
     pdf.end();
