@@ -81,6 +81,17 @@ ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ;
 ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS email_recipients TEXT;
 ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS email_error TEXT;
 
+CREATE TABLE IF NOT EXISTS delivery_email_logs (
+  id TEXT PRIMARY KEY,
+  delivery_id TEXT NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
+  recipient TEXT NOT NULL,
+  status TEXT NOT NULL,
+  smtp_response TEXT,
+  message_id TEXT,
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_drivers_email ON drivers(email);
 CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status);
 CREATE INDEX IF NOT EXISTS idx_driver_terms_driver ON driver_terms_acceptances(driver_id);
@@ -90,3 +101,5 @@ CREATE INDEX IF NOT EXISTS idx_deliveries_driver ON deliveries(driver_id);
 CREATE INDEX IF NOT EXISTS idx_deliveries_client ON deliveries(client_id);
 CREATE INDEX IF NOT EXISTS idx_deliveries_protocol ON deliveries(protocol);
 CREATE INDEX IF NOT EXISTS idx_deliveries_delivered_at ON deliveries(delivered_at);
+CREATE INDEX IF NOT EXISTS idx_delivery_email_logs_delivery ON delivery_email_logs(delivery_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_email_logs_recipient ON delivery_email_logs(recipient);

@@ -430,6 +430,22 @@ async function updateDeliveryEmailStatus(deliveryId, status, recipients = [], er
   return result.rows[0] ? mapDelivery(result.rows[0]) : null;
 }
 
+async function logDeliveryEmail(deliveryId, recipient, status, details = {}) {
+  await pool.query(
+    `INSERT INTO delivery_email_logs (id, delivery_id, recipient, status, smtp_response, message_id, error)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [
+      `email-log-${crypto.randomUUID()}`,
+      deliveryId,
+      recipient,
+      status,
+      details.response || '',
+      details.messageId || '',
+      details.error ? String(details.error).slice(0, 700) : '',
+    ],
+  );
+}
+
 async function sendDeliveryReceiptEmail(deliveryId) {
   const context = await getDeliveryContext(deliveryId);
   if (!context) throw new Error('Entrega nao encontrada para envio de e-mail.');
@@ -463,64 +479,96 @@ async function sendDeliveryReceiptEmail(deliveryId) {
       ['Hora', formatTimeBr(deliveredAt)],
       ['Endereco', context.delivery.address],
     ];
-    await transporter.sendMail({
-      from,
-      to: recipients,
-      subject: `Comprovante de entrega ${context.delivery.protocol} - Marra Transportes`,
-      text: [
-        `Segue em anexo o comprovante de entrega ${context.delivery.protocol}.`,
-        '',
-        `Motorista: ${context.driver.name}`,
-        `Cliente: ${context.client.company_name}`,
-        `Documento: ${context.delivery.document_type}`,
-        `Endereco: ${context.delivery.address}`,
-        '',
-        'Mensagem automatica do sistema Marra Transportes.',
-      ].join('\n'),
-      html: `
-        <div style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:24px 0;">
-            <tr>
-              <td align="center">
-                <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid #dbe3ec;border-radius:8px;overflow:hidden;">
-                  <tr>
-                    <td style="background:#005A9C;padding:22px 28px;color:#ffffff;">
-                      <div style="font-size:22px;font-weight:700;letter-spacing:.2px;">Marra Transportes</div>
-                      <div style="font-size:13px;margin-top:6px;color:#dbeafe;">Comprovante digital de entrega</div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding:28px;">
-                      <p style="margin:0 0 16px;font-size:16px;line-height:1.5;">O comprovante da entrega <strong>${context.delivery.protocol}</strong> foi gerado e segue em anexo no formato PDF.</p>
-                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:18px 0;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;">
-                        ${emailSummaryRows
-                          .map(
-                            ([label, value]) => `
-                              <tr>
-                                <td style="width:140px;background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:10px 12px;font-size:12px;font-weight:700;color:#005A9C;text-transform:uppercase;">${label}</td>
-                                <td style="border-bottom:1px solid #e2e8f0;padding:10px 12px;font-size:14px;color:#111827;">${value || '-'}</td>
-                              </tr>
-                            `,
-                          )
-                          .join('')}
-                      </table>
-                      <p style="margin:18px 0 0;font-size:13px;line-height:1.5;color:#475569;">Este e-mail foi enviado automaticamente pelo sistema Marra Transportes. Guarde o PDF anexo como comprovante operacional.</p>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-        </div>
-      `,
-      attachments: [
-        {
-          filename: `${context.delivery.protocol}.pdf`,
-          content: pdf,
-          contentType: 'application/pdf',
-        },
-      ],
-    });
+    const subject = `Comprovante de entrega ${context.delivery.protocol} - Marra Transportes`;
+    const text = [
+      `Segue em anexo o comprovante de entrega ${context.delivery.protocol}.`,
+      '',
+      `Motorista: ${context.driver.name}`,
+      `Cliente: ${context.client.company_name}`,
+      `Documento: ${context.delivery.document_type}`,
+      `Endereco: ${context.delivery.address}`,
+      '',
+      'Mensagem automatica do sistema Marra Transportes.',
+    ].join('\n');
+    const html = `
+      <div style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:24px 0;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid #dbe3ec;border-radius:8px;overflow:hidden;">
+                <tr>
+                  <td style="background:#005A9C;padding:22px 28px;color:#ffffff;">
+                    <div style="font-size:22px;font-weight:700;letter-spacing:.2px;">Marra Transportes</div>
+                    <div style="font-size:13px;margin-top:6px;color:#dbeafe;">Comprovante digital de entrega</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px;">
+                    <p style="margin:0 0 16px;font-size:16px;line-height:1.5;">O comprovante da entrega <strong>${context.delivery.protocol}</strong> foi gerado e segue em anexo no formato PDF.</p>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:18px 0;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;">
+                      ${emailSummaryRows
+                        .map(
+                          ([label, value]) => `
+                            <tr>
+                              <td style="width:140px;background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:10px 12px;font-size:12px;font-weight:700;color:#005A9C;text-transform:uppercase;">${label}</td>
+                              <td style="border-bottom:1px solid #e2e8f0;padding:10px 12px;font-size:14px;color:#111827;">${value || '-'}</td>
+                            </tr>
+                          `,
+                        )
+                        .join('')}
+                    </table>
+                    <p style="margin:18px 0 0;font-size:13px;line-height:1.5;color:#475569;">Este e-mail foi enviado automaticamente pelo sistema Marra Transportes. Guarde o PDF anexo como comprovante operacional.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+    const failed = [];
+    const sent = [];
+    for (const recipient of recipients) {
+      try {
+        const info = await transporter.sendMail({
+          from,
+          to: recipient,
+          replyTo: process.env.SMTP_USER,
+          envelope: {
+            from: process.env.SMTP_USER,
+            to: recipient,
+          },
+          subject,
+          text,
+          html,
+          headers: {
+            'X-Marra-Protocol': context.delivery.protocol,
+          },
+          attachments: [
+            {
+              filename: `${context.delivery.protocol}.pdf`,
+              content: pdf,
+              contentType: 'application/pdf',
+            },
+          ],
+        });
+        sent.push(recipient);
+        await logDeliveryEmail(deliveryId, recipient, 'Enviado', {
+          response: info.response,
+          messageId: info.messageId,
+        });
+      } catch (error) {
+        failed.push(`${recipient}: ${error.message || 'falha no envio'}`);
+        await logDeliveryEmail(deliveryId, recipient, 'Falhou', { error: error.message || 'Falha no envio.' });
+      }
+    }
+
+    if (failed.length > 0 && sent.length > 0) {
+      return updateDeliveryEmailStatus(deliveryId, 'Parcial', recipients, failed.join(' | '));
+    }
+    if (failed.length > 0) {
+      return updateDeliveryEmailStatus(deliveryId, 'Falhou', recipients, failed.join(' | '));
+    }
     return updateDeliveryEmailStatus(deliveryId, 'Enviado', recipients, '');
   } catch (error) {
     return updateDeliveryEmailStatus(deliveryId, 'Falhou', recipients, error.message || 'Falha ao enviar e-mail.');
