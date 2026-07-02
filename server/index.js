@@ -231,6 +231,29 @@ function smtpConfigured() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && (process.env.SMTP_FROM || process.env.SMTP_USER));
 }
 
+function brevoConfigured() {
+  return Boolean(process.env.BREVO_API_KEY && (process.env.SMTP_FROM || process.env.SMTP_USER));
+}
+
+function emailConfigured() {
+  return brevoConfigured() || smtpConfigured();
+}
+
+function parseSender(value = '') {
+  const fallbackEmail = process.env.SMTP_USER || 'contato@marratransportes.com.br';
+  const match = String(value).match(/^(.*?)\s*<([^>]+)>$/);
+  if (match) {
+    return {
+      name: match[1].trim().replace(/^"|"$/g, '') || 'Marra Transportes',
+      email: match[2].trim(),
+    };
+  }
+  return {
+    name: 'Marra Transportes',
+    email: String(value || fallbackEmail).trim(),
+  };
+}
+
 function createTransporter() {
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -241,6 +264,47 @@ function createTransporter() {
       pass: process.env.SMTP_PASS,
     },
   });
+}
+
+async function sendViaBrevo({ recipient, subject, text, html, attachments = [] }) {
+  const sender = parseSender(process.env.SMTP_FROM || process.env.SMTP_USER);
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'api-key': process.env.BREVO_API_KEY,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      sender,
+      to: [{ email: recipient }],
+      replyTo: sender,
+      subject,
+      textContent: text,
+      htmlContent: html,
+      attachment: attachments.map((item) => ({
+        name: item.filename,
+        content: Buffer.isBuffer(item.content) ? item.content.toString('base64') : Buffer.from(item.content).toString('base64'),
+      })),
+      headers: {
+        'X-Marra-Protocol': subject,
+      },
+    }),
+  });
+  const body = await response.text();
+  let parsed = {};
+  try {
+    parsed = body ? JSON.parse(body) : {};
+  } catch {
+    parsed = { message: body };
+  }
+  if (!response.ok) {
+    throw new Error(`Brevo API ${response.status}: ${parsed.message || body || 'falha no envio'}`);
+  }
+  return {
+    response: `Brevo API ${response.status}`,
+    messageId: parsed.messageId || '',
+  };
 }
 
 function splitEmails(value = '') {
@@ -499,8 +563,8 @@ async function sendDeliveryReceiptEmail(deliveryId) {
     return updateDeliveryEmailStatus(deliveryId, 'Sem destinatario', [], 'Nenhum destinatario configurado.');
   }
 
-  if (!smtpConfigured()) {
-    return updateDeliveryEmailStatus(deliveryId, 'SMTP nao configurado', recipients, 'Configure SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM e MARRA_NOTIFICATION_EMAILS no .env.');
+  if (!emailConfigured()) {
+    return updateDeliveryEmailStatus(deliveryId, 'E-mail nao configurado', recipients, 'Configure BREVO_API_KEY ou SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM e MARRA_NOTIFICATION_EMAILS no .env.');
   }
 
   try {
@@ -508,7 +572,7 @@ async function sendDeliveryReceiptEmail(deliveryId) {
     const receiptUrl = `${publicAppUrl}/comprovante/${receiptToken}`;
     const pdf = await generateDeliveryReceiptPdf(context);
     const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-    const transporter = createTransporter();
+    const transporter = brevoConfigured() ? null : createTransporter();
     const deliveredAt = new Date(context.delivery.delivered_at);
     const emailSummaryRows = [
       ['Protocolo', context.delivery.protocol],
@@ -578,30 +642,33 @@ async function sendDeliveryReceiptEmail(deliveryId) {
         </div>
       `;
       try {
-        const info = await transporter.sendMail({
-          from,
-          to: recipient,
-          replyTo: process.env.SMTP_USER,
-          envelope: {
-            from: process.env.SMTP_USER,
-            to: recipient,
-          },
-          subject,
-          text,
-          html,
-          headers: {
-            'X-Marra-Protocol': context.delivery.protocol,
-          },
-          attachments: attachPdf
-            ? [
-                {
-                  filename: `${context.delivery.protocol}.pdf`,
-                  content: pdf,
-                  contentType: 'application/pdf',
-                },
-              ]
-            : [],
-        });
+        const attachments = attachPdf
+          ? [
+              {
+                filename: `${context.delivery.protocol}.pdf`,
+                content: pdf,
+                contentType: 'application/pdf',
+              },
+            ]
+          : [];
+        const info = brevoConfigured()
+          ? await sendViaBrevo({ recipient, subject, text, html, attachments })
+          : await transporter.sendMail({
+              from,
+              to: recipient,
+              replyTo: process.env.SMTP_USER,
+              envelope: {
+                from: process.env.SMTP_USER,
+                to: recipient,
+              },
+              subject,
+              text,
+              html,
+              headers: {
+                'X-Marra-Protocol': context.delivery.protocol,
+              },
+              attachments,
+            });
         sent.push(recipient);
         await logDeliveryEmail(deliveryId, recipient, 'Enviado', {
           response: info.response,
