@@ -268,6 +268,23 @@ function createTransporter() {
 
 async function sendViaBrevo({ recipient, subject, text, html, attachments = [] }) {
   const sender = parseSender(process.env.SMTP_FROM || process.env.SMTP_USER);
+  const payload = {
+    sender,
+    to: [{ email: recipient }],
+    replyTo: sender,
+    subject,
+    textContent: text,
+    htmlContent: html,
+    headers: {
+      'X-Marra-Protocol': subject,
+    },
+  };
+  if (attachments.length > 0) {
+    payload.attachment = attachments.map((item) => ({
+      name: item.filename,
+      content: Buffer.isBuffer(item.content) ? item.content.toString('base64') : Buffer.from(item.content).toString('base64'),
+    }));
+  }
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
@@ -275,21 +292,7 @@ async function sendViaBrevo({ recipient, subject, text, html, attachments = [] }
       'api-key': process.env.BREVO_API_KEY,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      sender,
-      to: [{ email: recipient }],
-      replyTo: sender,
-      subject,
-      textContent: text,
-      htmlContent: html,
-      attachment: attachments.map((item) => ({
-        name: item.filename,
-        content: Buffer.isBuffer(item.content) ? item.content.toString('base64') : Buffer.from(item.content).toString('base64'),
-      })),
-      headers: {
-        'X-Marra-Protocol': subject,
-      },
-    }),
+    body: JSON.stringify(payload),
   });
   const body = await response.text();
   let parsed = {};
