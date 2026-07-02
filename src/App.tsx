@@ -26,6 +26,9 @@ import {
   XCircle,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
+import { Capacitor } from '@capacitor/core';
+import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Geolocation as CapacitorGeolocation } from '@capacitor/geolocation';
 
 type DriverStatus = 'Pendente' | 'Aprovado' | 'Reprovado' | 'Bloqueado';
 type View =
@@ -122,6 +125,16 @@ const TERMS_VERSION = '2026-06-28';
 const DRIVER_COMMISSION_RATE = 16;
 
 const today = new Date().toISOString().slice(0, 10);
+const PUBLIC_WEB_URL = (import.meta.env.VITE_PUBLIC_WEB_URL || 'https://app.marratransportes.com.br').replace(/\/+$/, '');
+
+const absoluteUrl = (path?: string) => {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path) || path.startsWith('data:')) return path;
+  return `${PUBLIC_WEB_URL}${path.startsWith('/') ? path : `/${path}`}`;
+};
+
+const apiUrl = (path: string) => (Capacitor.isNativePlatform() ? absoluteUrl(path) : path);
+const assetUrl = (path?: string) => (Capacitor.isNativePlatform() ? absoluteUrl(path) : path || '');
 
 const mapsUrl = (latitude?: number, longitude?: number) =>
   latitude === undefined || longitude === undefined ? '' : `https://www.google.com/maps?q=${latitude},${longitude}`;
@@ -178,7 +191,7 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
   if (!headers.has('Content-Type') && options.body) headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  const response = await fetch(path, { ...options, headers });
+  const response = await fetch(apiUrl(path), { ...options, headers });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.message || 'Erro de comunicacao com o servidor.');
@@ -976,8 +989,32 @@ function NewDeliveryScreen({
     if (selectedClient) setAddress(selectedClient.address);
   }, [clientId]);
 
-  const captureGps = () => {
+  const captureGps = async () => {
     setLoadingGps(true);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const permission = await CapacitorGeolocation.requestPermissions();
+        if (permission.location === 'denied') {
+          toast('error', 'Permissao de localizacao negada.');
+          return;
+        }
+        const position = await CapacitorGeolocation.getCurrentPosition({
+          enableHighAccuracy: true,
+          timeout: 6500,
+        });
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        setCoords({ latitude, longitude });
+        const label = await reverseGeocode(latitude, longitude);
+        setLocationLabel(label || 'Endereco aproximado nao identificado');
+        toast('success', label ? 'Localizacao capturada com endereco aproximado.' : 'Localizacao capturada.');
+      } catch {
+        toast('error', 'Nao foi possivel capturar o GPS. Verifique a permissao de localizacao.');
+      } finally {
+        setLoadingGps(false);
+      }
+      return;
+    }
     if (!navigator.geolocation) {
       toast('error', 'GPS indisponivel neste dispositivo.');
       setLoadingGps(false);
@@ -1156,7 +1193,7 @@ function DeliveryDetails({
   const client = clients.find((item) => item.id === delivery.clientId);
   const driver = drivers.find((item) => item.id === delivery.driverId);
   const [sending, setSending] = useState(false);
-  const receiptUrl = delivery.receiptToken ? `${window.location.origin}/comprovante/${delivery.receiptToken}` : '';
+  const receiptUrl = delivery.receiptToken ? `${PUBLIC_WEB_URL}/comprovante/${delivery.receiptToken}` : '';
   return (
     <div className="space-y-6">
       <SectionHeader title="Detalhes da Entrega" subtitle={delivery.protocol} />
@@ -1237,7 +1274,7 @@ function Receipt({ delivery, clients, drivers }: { delivery: Delivery; clients: 
       const loadImage = async (src?: string) => {
         if (!src) return '';
         if (src.startsWith('data:')) return src;
-        const response = await fetch(src);
+        const response = await fetch(assetUrl(src));
         const blob = await response.blob();
         return await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -1711,7 +1748,7 @@ function TermsArchiveButton({
         .slice(0, 24)
         .toUpperCase();
 
-      const logo = await fetch('/marra-logo-tight.png')
+      const logo = await fetch(assetUrl('/marra-logo-tight.png'))
         .then((response) => response.blob())
         .then(
           (blob) =>
@@ -2019,26 +2056,34 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
 
+  const compressDataUrl = (original: string) =>
+    new Promise<string>((resolve, reject) => {
+      const image = new Image();
+      image.onerror = () => resolve(original);
+      image.onload = () => {
+        const maxSide = 1400;
+        const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d')!.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      image.src = original;
+    });
+
   const compressImage = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onerror = () => reject(new Error('Nao foi possivel ler a imagem.'));
-      reader.onload = () => {
-        const original = String(reader.result);
-        const image = new Image();
-        image.onerror = () => resolve(original);
-        image.onload = () => {
-          const maxSide = 1400;
-          const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
-          const width = Math.max(1, Math.round(image.width * scale));
-          const height = Math.max(1, Math.round(image.height * scale));
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          canvas.getContext('2d')!.drawImage(image, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.82));
-        };
-        image.src = original;
+      reader.onload = async () => {
+        try {
+          resolve(await compressDataUrl(String(reader.result)));
+        } catch (error) {
+          reject(error);
+        }
       };
       reader.readAsDataURL(file);
     });
@@ -2056,6 +2101,37 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
       setProcessing(false);
     }
   };
+
+  const captureNativePhoto = async () => {
+    if (!Capacitor.isNativePlatform()) return;
+    setProcessing(true);
+    setError('');
+    try {
+      const permission = await CapacitorCamera.requestPermissions({ permissions: ['camera', 'photos'] });
+      if (permission.camera === 'denied') {
+        setError('Permissao de camera negada.');
+        return;
+      }
+      const photo = await CapacitorCamera.getPhoto({
+        quality: 82,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+        allowEditing: false,
+        promptLabelHeader: label,
+        promptLabelPhoto: 'Tirar foto',
+        promptLabelPicture: 'Galeria',
+      });
+      if (!photo.dataUrl) throw new Error('Foto sem dados.');
+      onChange(await compressDataUrl(photo.dataUrl));
+    } catch {
+      setError('Nao foi possivel capturar esta foto. Tente novamente.');
+      onChange('');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const isNative = Capacitor.isNativePlatform();
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -2065,20 +2141,35 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
             {processing ? 'Processando imagem...' : value ? 'Imagem carregada' : 'Pendente'}
           </div>
         </div>
-        <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-marra-primary px-3 py-2 text-sm font-black text-marra-primary">
-          <Camera size={17} />
-          {value ? 'Trocar' : 'Adicionar'}
-          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => readImage(event.target.files?.[0])} />
-        </label>
+        {isNative ? (
+          <button type="button" onClick={captureNativePhoto} className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-marra-primary px-3 py-2 text-sm font-black text-marra-primary">
+            <Camera size={17} />
+            {value ? 'Trocar' : 'Adicionar'}
+          </button>
+        ) : (
+          <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-marra-primary px-3 py-2 text-sm font-black text-marra-primary">
+            <Camera size={17} />
+            {value ? 'Trocar' : 'Adicionar'}
+            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => readImage(event.target.files?.[0])} />
+          </label>
+        )}
       </div>
       {error && <p className="mt-2 text-sm font-bold text-red-600">{error}</p>}
       {value ? (
         <img src={value} alt={label} className="h-40 w-full rounded-lg object-cover sm:h-32" />
       ) : (
-        <label className="flex h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-marra-secondary bg-sky-50 p-4 text-center text-sm font-bold text-marra-primary">
+        <label
+          onClick={(event) => {
+            if (isNative) {
+              event.preventDefault();
+              captureNativePhoto();
+            }
+          }}
+          className="flex h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-marra-secondary bg-sky-50 p-4 text-center text-sm font-bold text-marra-primary"
+        >
           <Camera size={22} />
           <span className="mt-2">Toque para enviar</span>
-          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => readImage(event.target.files?.[0])} />
+          {!isNative && <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => readImage(event.target.files?.[0])} />}
         </label>
       )}
     </div>
@@ -2201,7 +2292,7 @@ function ImagePreview({ title, src }: { title: string; src?: string }) {
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-3 text-sm font-black text-slate-700">{title}</div>
       {src ? (
-        <img src={src} alt={title} className="h-44 w-full rounded-lg object-cover" />
+        <img src={assetUrl(src)} alt={title} className="h-44 w-full rounded-lg object-cover" />
       ) : (
         <div className="grid h-44 place-items-center rounded-lg bg-slate-50 text-sm font-bold text-slate-400">Sem imagem</div>
       )}

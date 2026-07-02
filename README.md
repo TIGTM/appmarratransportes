@@ -53,6 +53,19 @@ A aplicacao real sobe API + frontend na porta:
 
 Guia completo de servidor: [docs/DEPLOY.md](docs/DEPLOY.md).
 
+## Mobile com Capacitor
+
+Android ja esta preparado com Capacitor:
+
+```bash
+npm run cap:android
+npm run cap:open:android
+```
+
+O iOS deve ser gerado por ultimo em um ambiente macOS/Xcode.
+
+Guia completo: [docs/mobile-capacitor.md](docs/mobile-capacitor.md).
+
 ## Acessos
 
 Motorista:
