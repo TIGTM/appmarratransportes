@@ -6,6 +6,12 @@ uploads/
 !.env.example
 *.local
 *.tsbuildinfo
+*.apk
+*.aab
+*.jks
+*.keystore
+.idea/
+android/.idea/
 vite.config.js
 vite.config.d.ts
 npm-debug.log*
