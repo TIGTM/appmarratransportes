@@ -212,11 +212,18 @@ function protocolFor(next: number) {
   return `MT-${today.replaceAll('-', '')}-${String(next).padStart(6, '0')}`;
 }
 
+function initialViewFromPath(): View {
+  const path = window.location.pathname.replace(/\/+$/, '');
+  if (path === '/privacy') return 'privacy';
+  if (path === '/terms') return 'terms';
+  return 'login';
+}
+
 function App() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [view, setView] = useState<View>('login');
+  const [view, setView] = useState<View>(() => initialViewFromPath());
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string>('');
   const [session, setSession] = useState<{ role: 'driver' | 'admin'; driverId?: string } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
