@@ -22,6 +22,14 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>A câmera é usada para fotografar a nota fiscal e registrar a evidência da entrega.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>A localização é usada para registrar o ponto aproximado onde a entrega foi realizada.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>O app pode salvar comprovantes e evidências de entrega na biblioteca de fotos quando solicitado.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>A biblioteca de fotos é usada para selecionar imagens da nota fiscal e da entrega quando necessário.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
