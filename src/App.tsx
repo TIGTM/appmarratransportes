@@ -488,7 +488,7 @@ function App() {
 
 function ToastStack({ toasts }: { toasts: Toast[] }) {
   return (
-    <div className="fixed right-4 top-4 z-50 flex w-[calc(100%-2rem)] max-w-sm flex-col gap-3">
+    <div className="ios-safe-toast fixed right-4 z-50 flex w-[calc(100%-2rem)] max-w-sm flex-col gap-3">
       {toasts.map((toast) => (
         <div
           key={toast.id}
@@ -810,7 +810,7 @@ function DriverShell({
   };
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[280px_1fr]">
-      <aside className={`${open ? 'fixed inset-0 z-40 block' : 'hidden'} bg-marra-primary p-4 text-white lg:sticky lg:top-0 lg:block lg:h-screen`}>
+      <aside className={`${open ? 'fixed inset-0 z-40 block ios-safe-panel' : 'hidden'} bg-marra-primary p-4 text-white lg:sticky lg:top-0 lg:block lg:h-screen lg:pt-4`}>
         <div className="flex items-center justify-between rounded-lg bg-white p-4">
           <BrandMark />
           <button className="text-slate-700 lg:hidden" onClick={() => setOpen(false)}>
@@ -858,7 +858,7 @@ function AdminShell({
   };
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[290px_1fr]">
-      <aside className={`${open ? 'fixed inset-0 z-40 block' : 'hidden'} bg-slate-950 p-4 text-white lg:sticky lg:top-0 lg:block lg:h-screen`}>
+      <aside className={`${open ? 'fixed inset-0 z-40 block ios-safe-panel' : 'hidden'} bg-slate-950 p-4 text-white lg:sticky lg:top-0 lg:block lg:h-screen lg:pt-4`}>
         <div className="rounded-lg bg-white p-4">
           <div className="flex items-center justify-between">
             <BrandMark />
@@ -887,7 +887,7 @@ function AdminShell({
 
 function TopBar({ title, onMenu }: { title: string; onMenu: () => void }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur">
+    <header className="ios-safe-top ios-safe-top-offset sticky z-30 border-b border-slate-200 bg-white/95 px-4 pb-4 pt-4 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between">
         <div className="flex items-center gap-3">
           <button className="rounded-lg border border-slate-200 p-2 lg:hidden" onClick={onMenu}>

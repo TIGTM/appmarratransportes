@@ -19,6 +19,23 @@ body {
   min-width: 320px;
 }
 
+.ios-safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.ios-safe-top-offset {
+  top: env(safe-area-inset-top, 0px);
+}
+
+.ios-safe-panel {
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+
+.ios-safe-toast {
+  top: calc(1rem + env(safe-area-inset-top, 0px));
+}
+
 button,
 input,
 select,
