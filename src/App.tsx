@@ -220,6 +220,10 @@ function initialViewFromPath(): View {
 }
 
 function App() {
+  useEffect(() => {
+    document.documentElement.classList.toggle('native-ios', Capacitor.getPlatform() === 'ios');
+  }, []);
+
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);

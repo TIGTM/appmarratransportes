@@ -20,11 +20,11 @@ body {
 }
 
 .ios-safe-top {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: 1rem;
 }
 
 .ios-safe-top-offset {
-  top: env(safe-area-inset-top, 0px);
+  top: 0;
 }
 
 .ios-safe-panel {
@@ -34,6 +34,18 @@ body {
 
 .ios-safe-toast {
   top: calc(1rem + env(safe-area-inset-top, 0px));
+}
+
+.native-ios .ios-safe-top {
+  padding-top: calc(1rem + max(env(safe-area-inset-top, 0px), 52px));
+}
+
+.native-ios .ios-safe-panel {
+  padding-top: calc(1rem + max(env(safe-area-inset-top, 0px), 52px));
+}
+
+.native-ios .ios-safe-toast {
+  top: calc(1rem + max(env(safe-area-inset-top, 0px), 52px));
 }
 
 button,
