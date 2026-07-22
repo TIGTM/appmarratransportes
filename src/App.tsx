@@ -2118,7 +2118,7 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
     setProcessing(true);
     setError('');
     try {
-      const permission = await CapacitorCamera.requestPermissions({ permissions: ['camera', 'photos'] });
+      const permission = await CapacitorCamera.requestPermissions({ permissions: ['camera'] });
       if (permission.camera === 'denied') {
         setError('Permissao de camera negada.');
         return;
